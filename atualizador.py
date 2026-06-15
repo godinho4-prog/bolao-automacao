@@ -98,7 +98,7 @@ def atualizar_jogos():
     # Gravação no Banco de Dados
     if novos_resultados:
         try:
-            doc_ref = db.collection('config').doc('results')
+            doc_ref = db.collection('config').document('results')
             doc_ref.set(novos_resultados, merge=True)
             print("Operação concluída. O Firebase foi atualizado com sucesso via Raspagem de Dados.")
         except Exception as e:
