@@ -3,7 +3,7 @@ name: Atualizador de Placares do Bolao
 on:
   schedule:
     # Roda nos minutos 0, 5, 10, 30 e 55 das 15h às 04h (UTC)
-    - cron: '0,5,10,30,55 15-23,0-4 * 6,7 *'
+    - cron: '0,5,10,30,35,55 15-23,0-4 * 6,7 *'
   workflow_dispatch: # Permite que você clique em um botão para rodar manualmente se quiser testar
 
 jobs:
