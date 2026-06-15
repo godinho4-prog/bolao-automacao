@@ -1,6 +1,8 @@
 import os
 import json
 import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -15,9 +17,9 @@ TRADUCAO = {
     "South Africa": "Africa do Sul", "Germany": "Alemanha", "Saudi Arabia": "Arabia Saudita",
     "Algeria": "Argelia", "Argentina": "Argentina", "Australia": "Australia", "Austria": "Austria",
     "Belgium": "Belgica", "Bosnia and Herzegovina": "Bosnia", "Brazil": "Brasil", "Cape Verde": "Cabo Verde",
-    "Canada": "Canada", "Qatar": "Catar", "Colombia": "Colombia", "South Korea": "Coreia do Sul", 
-    "Côte d'Ivoire": "Costa do Marfim", "Ivory Coast": "Costa do Marfim", "Croatia": "Croacia", 
-    "Curaçao": "Curacau", "Curacao": "Curacau", "Egypt": "Egito", "Ecuador": "Equador", 
+    "Cape Verde Islands": "Cabo Verde", "Canada": "Canada", "Qatar": "Catar", "Colombia": "Colombia", 
+    "South Korea": "Coreia do Sul", "Côte d'Ivoire": "Costa do Marfim", "Ivory Coast": "Costa do Marfim", 
+    "Croatia": "Croacia", "Curaçao": "Curacau", "Curacao": "Curacau", "Egypt": "Egito", "Ecuador": "Equador", 
     "Scotland": "Escocia", "Spain": "Espanha", "United States": "Estados Unidos", "USA": "Estados Unidos", 
     "France": "Franca", "Ghana": "Gana", "Haiti": "Haiti", "Netherlands": "Holanda",
     "England": "Inglaterra", "Iran": "Irã", "Iraq": "Iraque", "Japan": "Japao", "Jordan": "Jordania",
@@ -27,6 +29,7 @@ TRADUCAO = {
     "Switzerland": "Suica", "Tunisia": "Tunisia", "Turkey": "Turquia", "Uruguay": "Uruguai", "Uzbekistan": "Uzbequistao"
 }
 
+# 3. Mapeamento de todos os jogos do Bolão
 JOGOS_IDS = {
     "Mexico x Africa do Sul": "1", "Coreia do Sul x Rep Tcheca": "2", "Rep Tcheca x Africa do Sul": "3", "Coreia do Sul x Mexico": "4", "Rep Tcheca x Mexico": "5", "Africa do Sul x Coreia do Sul": "6",
     "Canada x Bosnia": "7", "Catar x Suica": "8", "Suica x Bosnia": "9", "Catar x Canada": "10", "Suica x Canada": "11", "Bosnia x Catar": "12",
@@ -43,63 +46,57 @@ JOGOS_IDS = {
 }
 
 def atualizar_jogos():
-    # URL da API comunitária aberta para 2026
-    url = "https://worldcup26.ir/api/v1/matches"
-    
+    url = "https://native-stats.org/competition/WC/"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
     try:
-        # Adicionamos um timeout de segurança de 10s para o robô não ficar travado se o servidor deles cair
-        resposta = requests.get(url, timeout=10)
-        dados = resposta.json()
+        resposta = requests.get(url, headers=headers)
+        soup = BeautifulSoup(resposta.text, 'html.parser')
     except Exception as e:
-        print("Erro crítico: Falha ao ler o sinal JSON da comunidade.", e)
+        print("Erro de rede ao tentar raspar a página:", e)
         return
 
+    texto_puro = soup.get_text(separator=' | ', strip=True)
+    partes = texto_puro.split(' | ')
+    
     novos_resultados = {}
-    lista_jogos = dados.get("matches", []) if isinstance(dados, dict) else dados
-    print(f"RADAR LIGADO: Lendo o sinal JSON. {len(lista_jogos)} jogos encontrados no pacote.")
+    ano_atual = str(datetime.utcnow().year)
 
-    for jogo in lista_jogos:
-        # A API envia status como 'IN_PLAY', 'FINISHED', 'SCHEDULED', etc.
-        status_api = str(jogo.get("status", "")).upper()
-        
-        # Filtramos apenas os que já começaram ou já acabaram
-        if status_api in ["IN_PLAY", "LIVE", "FINISHED", "COMPLETED"]:
-            time_casa_api = jogo.get("homeTeam", {}).get("name", "")
-            time_fora_api = jogo.get("awayTeam", {}).get("name", "")
+    for i, pedaco in enumerate(partes):
+        if pedaco.startswith(ano_atual + "/") and len(partes) > i + 8:
+            time_casa_api = partes[i + 1]
+            time_fora_api = partes[i + 5]
+            placar_cru = partes[i + 8]
             
-            # Puxa o placar atual (mesmo vazio, tratamos o erro)
-            try:
-                gols_casa = int(jogo.get("score", {}).get("fullTime", {}).get("home", 0))
-                gols_fora = int(jogo.get("score", {}).get("fullTime", {}).get("away", 0))
-            except (ValueError, TypeError):
-                gols_casa, gols_fora = 0, 0
+            if ":" in placar_cru:
+                try:
+                    gols_casa, gols_fora = placar_cru.split(":")
+                    gols_casa = int(gols_casa.strip())
+                    gols_fora = int(gols_fora.strip())
+                except ValueError:
+                    continue
 
-            casa_traduzido = TRADUCAO.get(time_casa_api, time_casa_api)
-            fora_traduzido = TRADUCAO.get(time_fora_api, time_fora_api)
-            
-            chave_jogo = f"{casa_traduzido} x {fora_traduzido}"
-            jogo_id = JOGOS_IDS.get(chave_jogo)
+                casa_traduzido = TRADUCAO.get(time_casa_api, time_casa_api)
+                fora_traduzido = TRADUCAO.get(time_fora_api, time_fora_api)
+                
+                chave_jogo = f"{casa_traduzido} x {fora_traduzido}"
+                jogo_id = JOGOS_IDS.get(chave_jogo)
 
-            # Aqui é o pulo do gato: criamos a etiqueta para o seu front-end
-            status_bolao = "FINALIZADO" if status_api in ["FINISHED", "COMPLETED"] else "AO_VIVO"
-
-            if jogo_id:
-                novos_resultados[jogo_id] = {
-                    "home": gols_casa, 
-                    "away": gols_fora,
-                    "status": status_bolao
-                }
-                print(f"SUCESSO: {chave_jogo} ({gols_casa} x {gols_fora}) | Status: {status_bolao} | ID: {jogo_id}")
+                if jogo_id:
+                    novos_resultados[jogo_id] = {"home": gols_casa, "away": gols_fora}
+                    print(f"SUCESSO: {chave_jogo} ({gols_casa} x {gols_fora}) preparado. ID: {jogo_id}")
 
     if novos_resultados:
         try:
             doc_ref = db.collection('config').document('results')
             doc_ref.set(novos_resultados, merge=True)
-            print("Operação concluída. Firebase atualizado de forma estruturada!")
+            print("Operação concluída. O Firebase foi atualizado com sucesso via Raspagem de Dados.")
         except Exception as e:
             print("Erro ao tentar gravar os dados no Firebase:", e)
     else:
-        print("O radar não encontrou nenhum jogo finalizado ou em andamento na base.")
+        print("Nenhum jogo finalizado encontrado na raspagem de hoje.")
 
 if __name__ == "__main__":
     atualizar_jogos()
