@@ -14,8 +14,7 @@ db = firestore.client()
 # 2. Configurar a chamada para a API-Football
 API_KEY = os.environ.get('API_KEY')
 headers = {
-    "x-rapidapi-key": API_KEY,
-    "x-rapidapi-host": "v3.football.api-sports.io"
+    "x-apisports-key": API_KEY
 }
 
 # 3. Dicionário de Tradução (Inglês da API -> Seu Padrão)
@@ -58,11 +57,14 @@ def atualizar_jogos():
     url = f"https://v3.football.api-sports.io/fixtures?date={data_str}&league=1&season=2026"
     resposta = requests.get(url, headers=headers)
     
-    if resposta.status_code != 200:
-        print("Erro ao acessar a API.")
+    resposta = requests.get(url, headers=headers)
+    dados = resposta.json()
+    
+    # Radar para vermos o erro exato no terminal se falhar de novo
+    if "errors" in dados and dados["errors"]:
+        print("ERRO RECUSADO PELA API:", dados["errors"])
         return
 
-    dados = resposta.json()
     novos_resultados = {}
 
     for jogo in dados.get("response", []):
