@@ -2,9 +2,9 @@ name: Atualizador de Placares do Bolao
 
 on:
   schedule:
-    # Roda nos minutos 0, 5, 10, 30 e 55 das 15h às 04h (UTC)
-    - cron: '0,5,10,30,35,55 15-23,0-4 * 6,7 *'
-  workflow_dispatch: # Permite que você clique em um botão para rodar manualmente se quiser testar
+    # Roda a cada 5 minutos, das 15h às 23h e das 00h às 04h (UTC), nos meses 6 (Junho) e 7 (Julho)
+    - cron: '*/5 15-23,0-4 * 6,7 *'
+    workflow_dispatch: # Permite que você clique em um botão para rodar manualmente se quiser testar
 
 jobs:
   atualizar_firebase:
