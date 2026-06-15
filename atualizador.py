@@ -69,7 +69,8 @@ def atualizar_jogos():
         status = jogo["fixture"]["status"]["short"]
         
         # FT = Full Time, AET = After Extra Time, PEN = Penalties
-        if status in ["FT", "AET", "PEN"]:
+        # Adicionando o HT (Half Time) para o robô ler o placar no intervalo
+        if status in ["HT", "FT", "AET", "PEN"]:
             time_casa_api = jogo["teams"]["home"]["name"]
             time_fora_api = jogo["teams"]["away"]["name"]
             
