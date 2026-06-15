@@ -11,26 +11,27 @@ cred = credentials.Certificate(firebase_cert)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# 2. Configurar a chamada para a API-Football
+# 2. Configurar a chamada para a nova API (football-data.org)
 API_KEY = os.environ.get('API_KEY')
 headers = {
-    "x-apisports-key": API_KEY
+    "X-Auth-Token": API_KEY
 }
 
 # 3. Dicionário de Tradução (Inglês da API -> Seu Padrão)
 TRADUCAO = {
     "South Africa": "Africa do Sul", "Germany": "Alemanha", "Saudi Arabia": "Arabia Saudita",
     "Algeria": "Argelia", "Argentina": "Argentina", "Australia": "Australia", "Austria": "Austria",
-    "Belgium": "Belgica", "Bosnia": "Bosnia", "Brazil": "Brasil", "Cape Verde": "Cabo Verde",
-    "Canada": "Canada", "Qatar": "Catar", "Colombia": "Colombia", "South Korea": "Coreia do Sul",
-    "Ivory Coast": "Costa do Marfim", "Croatia": "Croacia", "Curacao": "Curacau", "Egypt": "Egito",
-    "Ecuador": "Equador", "Scotland": "Escocia", "Spain": "Espanha", "USA": "Estados Unidos",
-    "France": "Franca", "Ghana": "Gana", "Haiti": "Haiti", "Netherlands": "Holanda",
+    "Belgium": "Belgica", "Bosnia and Herzegovina": "Bosnia", "Brazil": "Brasil", "Cape Verde": "Cabo Verde",
+    "Cape Verde Islands": "Cabo Verde", "Canada": "Canada", "Qatar": "Catar", "Colombia": "Colombia", 
+    "Korea Republic": "Coreia do Sul", "South Korea": "Coreia do Sul", "Côte d'Ivoire": "Costa do Marfim", 
+    "Ivory Coast": "Costa do Marfim", "Croatia": "Croacia", "Curaçao": "Curacau", "Curacao": "Curacau", 
+    "Egypt": "Egito", "Ecuador": "Equador", "Scotland": "Escocia", "Spain": "Espanha", "United States": "Estados Unidos",
+    "USA": "Estados Unidos", "France": "Franca", "Ghana": "Gana", "Haiti": "Haiti", "Netherlands": "Holanda",
     "England": "Inglaterra", "Iran": "Irã", "Iraq": "Iraque", "Japan": "Japao", "Jordan": "Jordania",
     "Morocco": "Marrocos", "Mexico": "Mexico", "Norway": "Noruega", "New Zealand": "Nova Zelandia",
     "Panama": "Panama", "Paraguay": "Paraguai", "Portugal": "Portugal", "DR Congo": "RD Congo",
-    "Czech Republic": "Rep Tcheca", "Senegal": "Senegal", "Sweden": "Suecia", "Switzerland": "Suica",
-    "Tunisia": "Tunisia", "Turkey": "Turquia", "Uruguay": "Uruguai", "Uzbekistan": "Uzbequistao"
+    "Czech Republic": "Rep Tcheca", "Czechia": "Rep Tcheca", "Senegal": "Senegal", "Sweden": "Suecia", 
+    "Switzerland": "Suica", "Tunisia": "Tunisia", "Turkey": "Turquia", "Uruguay": "Uruguai", "Uzbekistan": "Uzbequistao"
 }
 
 # 4. Mapeamento dos Jogos (Seu Time Casa x Seu Time Fora -> ID do Jogo)
@@ -50,41 +51,38 @@ JOGOS_IDS = {
 }
 
 def atualizar_jogos():
-    # Pega os jogos do dia (UTC-3)
     hoje = datetime.utcnow() - timedelta(hours=3)
     data_str = hoje.strftime('%Y-%m-%d')
     
-    url = f"https://v3.football.api-sports.io/fixtures?date={data_str}&league=1&season=2026"
-    resposta = requests.get(url, headers=headers)
+    # Busca apenas os jogos da Copa do Mundo (WC) do dia atual
+    url = f"https://api.football-data.org/v4/matches?competitions=WC&dateFrom={data_str}&dateTo={data_str}"
     
     resposta = requests.get(url, headers=headers)
     dados = resposta.json()
     
-    # Radar para vermos o erro exato no terminal se falhar de novo
-    if "errors" in dados and dados["errors"]:
-        print("ERRO RECUSADO PELA API:", dados["errors"])
+    if resposta.status_code != 200:
+        print("ERRO DA API NOVA:", dados)
         return
 
     novos_resultados = {}
 
-    for jogo in dados.get("response", []):
-        status = jogo["fixture"]["status"]["short"]
+    for jogo in dados.get("matches", []):
+        status = jogo["status"]
         
-        # FT = Full Time, AET = After Extra Time, PEN = Penalties
-        # Adicionando o HT (Half Time) para o robô ler o placar no intervalo
-        if status in ["HT", "FT", "AET", "PEN"]:
-            time_casa_api = jogo["teams"]["home"]["name"]
-            time_fora_api = jogo["teams"]["away"]["name"]
+        # A API marca jogos terminados como "FINISHED"
+        if status == "FINISHED":
+            time_casa_api = jogo["homeTeam"]["name"]
+            time_fora_api = jogo["awayTeam"]["name"]
             
-          # Garante EXATAMENTE o placar dos 90 minutos (Full Time), ignorando prorrogação e pênaltis
-            gols_casa = jogo["score"]["fulltime"]["home"]
-            gols_fora = jogo["score"]["fulltime"]["away"]
-            
-            # Fallback de segurança caso ocorra um delay da API no momento do apito
+            # Puxa nativamente o placar do Tempo Normal (90 minutos)
+            gols_casa = jogo["score"]["regularTime"]["home"]
+            gols_fora = jogo["score"]["regularTime"]["away"]
+
+            # Fallback de segurança caso a API não preencha a chave regularTime em jogos comuns
             if gols_casa is None:
-                gols_casa = jogo["goals"]["home"]
+                gols_casa = jogo["score"]["fullTime"]["home"]
             if gols_fora is None:
-                gols_fora = jogo["goals"]["away"]
+                gols_fora = jogo["score"]["fullTime"]["away"]
 
             casa_traduzido = TRADUCAO.get(time_casa_api, time_casa_api)
             fora_traduzido = TRADUCAO.get(time_fora_api, time_fora_api)
@@ -94,15 +92,16 @@ def atualizar_jogos():
 
             if jogo_id:
                 novos_resultados[jogo_id] = {"home": gols_casa, "away": gols_fora}
-                print(f"Resultado processado: {chave_jogo} ({gols_casa} x {gols_fora}) -> ID: {jogo_id}")
+                print(f"SUCESSO: Resultado {chave_jogo} ({gols_casa} x {gols_fora}) preparado para o banco. ID: {jogo_id}")
+            else:
+                print(f"IGNORADO: Jogo encerrado, mas os nomes falharam no mapeamento ({time_casa_api} x {time_fora_api})")
 
-    # Grava tudo de uma vez no Firebase
     if novos_resultados:
         doc_ref = db.collection('config').doc('results')
         doc_ref.set(novos_resultados, merge=True)
-        print("Banco de dados atualizado com sucesso!")
+        print("Banco de dados atualizado sem custos adicionais!")
     else:
-        print("Nenhum jogo finalizado precisando de atualização no momento.")
+        print("Nenhum jogo finalizado detectado ou pendente de gravação.")
 
 if __name__ == "__main__":
     atualizar_jogos()
