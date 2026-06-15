@@ -2,9 +2,8 @@ name: Atualizador de Placares do Bolao
 
 on:
   schedule:
-    # Roda a cada 30 minutos, das 15h às 03h (UTC), durante junho e julho.
-    # Isso cobre perfeitamente as janelas de jogos no fuso do Brasil sem gastar recursos à toa.
-    - cron: '*/30 15-23,0-3 * 6,7 *'
+    # Roda nos minutos 0, 5, 10, 30 e 55 das 15h às 04h (UTC)
+    - cron: '0,5,10,30,55 15-23,0-4 * 6,7 *'
   workflow_dispatch: # Permite que você clique em um botão para rodar manualmente se quiser testar
 
 jobs:
