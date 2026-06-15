@@ -64,6 +64,16 @@ def atualizar_jogos():
         print("ERRO DA API NOVA:", dados)
         return
 
+# --- RADAR DE DEBUG ---
+    lista_jogos = dados.get("matches", [])
+    print(f"RADAR LIGADO: A API encontrou {len(lista_jogos)} jogos na data {data_str}.")
+    for m in lista_jogos:
+        time_casa = m.get("homeTeam", {}).get("name", "Desconhecido")
+        time_fora = m.get("awayTeam", {}).get("name", "Desconhecido")
+        status_api = m.get("status", "SEM_STATUS")
+        print(f" -> {time_casa} x {time_fora} | Status na API: {status_api}")
+    # ----------------------
+
     novos_resultados = {}
 
     for jogo in dados.get("matches", []):
