@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+from datetime import datetime, timedelta
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -43,8 +44,12 @@ JOGOS_IDS = {
 }
 
 def atualizar_jogos():
-    # URL pública de dados da ESPN para a Copa do Mundo
-    url = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world.cup/scoreboard"
+    # Pega a data de hoje no fuso do Brasil e formata do jeito que a ESPN gosta (ex: 20260615)
+    hoje = datetime.utcnow() - timedelta(hours=3)
+    data_str = hoje.strftime('%Y%m%d')
+    
+    # URL pública de dados da ESPN forçando a data específica
+    url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world.cup/scoreboard?dates={data_str}"
     
     try:
         resposta = requests.get(url)
@@ -55,7 +60,7 @@ def atualizar_jogos():
     
     novos_resultados = {}
     eventos = dados.get("events", [])
-    print(f"RADAR LIGADO: Lendo o sinal da ESPN. Encontrados {len(eventos)} jogos no painel deles.")
+    print(f"RADAR LIGADO: Lendo o sinal da ESPN para o dia {data_str}. Encontrados {len(eventos)} jogos no painel deles.")
 
     for evento in eventos:
         # A ESPN crava "STATUS_FINAL" quando o juiz apita
