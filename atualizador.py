@@ -54,8 +54,8 @@ def atualizar_jogos():
     hoje = datetime.utcnow() - timedelta(hours=3)
     data_str = hoje.strftime('%Y-%m-%d')
     
-    # Busca apenas os jogos da Copa do Mundo (WC) do dia atual
-    url = f"https://api.football-data.org/v4/matches?competitions=WC&dateFrom={data_str}&dateTo={data_str}"
+# Busca TODOS os jogos disponíveis na API para a data de hoje
+    url = f"https://api.football-data.org/v4/matches?dateFrom={data_str}&dateTo={data_str}"
     
     resposta = requests.get(url, headers=headers)
     dados = resposta.json()
@@ -66,12 +66,13 @@ def atualizar_jogos():
 
 # --- RADAR DE DEBUG ---
     lista_jogos = dados.get("matches", [])
-    print(f"RADAR LIGADO: A API encontrou {len(lista_jogos)} jogos na data {data_str}.")
+    print(f"RADAR LIGADO: A API encontrou {len(lista_jogos)} jogos no total na data {data_str}.")
     for m in lista_jogos:
+        competicao = m.get("competition", {}).get("name", "Sem Competição")
         time_casa = m.get("homeTeam", {}).get("name", "Desconhecido")
         time_fora = m.get("awayTeam", {}).get("name", "Desconhecido")
         status_api = m.get("status", "SEM_STATUS")
-        print(f" -> {time_casa} x {time_fora} | Status na API: {status_api}")
+        print(f" -> [{competicao}] {time_casa} x {time_fora} | Status: {status_api}")
     # ----------------------
 
     novos_resultados = {}
