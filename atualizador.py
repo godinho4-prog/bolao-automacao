@@ -2,7 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-def raio_x_html():
+def raio_x_placar():
     url = "https://native-stats.org/competition/WC/"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -12,22 +12,21 @@ def raio_x_html():
         resposta = requests.get(url, headers=headers)
         soup = BeautifulSoup(resposta.text, 'html.parser')
         
-        print("RADAR HTML LIGADO: Caçando as tags do jogo do Uruguai...")
+        print("RADAR LIGADO: Caçando a etiqueta visual exata dos placares...")
         
-        # Busca qualquer texto que contenha 'Uruguay'
-        textos_uruguai = soup.find_all(string=re.compile("Uruguay"))
+        # Caça qualquer pedaço de texto que seja puramente um placar (ex: "0:0", "1:2", "5:1")
+        placares = soup.find_all(string=re.compile(r"^\s*\d+\s*:\s*\d+\s*$"))
         
-        if textos_uruguai:
-            # Pega o contêiner 'avô' para tentar englobar a linha inteira do placar
-            container = textos_uruguai[0].parent.parent.parent.parent
-            print("--- ESTRUTURA HTML CRUA ---")
-            print(container.prettify()[:2000]) # Limita os caracteres para o log não travar
-            print("---------------------------")
+        if placares:
+            for p in placares:
+                tag_pai = p.parent
+                classes = tag_pai.get('class', ['Nenhuma_classe_encontrada'])
+                print(f"Placar capturado: {p.strip()} -> Classes visuais: {classes}")
         else:
-            print("Não achei a palavra 'Uruguay' no HTML recebido.")
+            print("Não achei os placares no HTML lido.")
             
     except Exception as e:
         print("Erro no Raio-X:", e)
 
 if __name__ == "__main__":
-    raio_x_html()
+    raio_x_placar()
