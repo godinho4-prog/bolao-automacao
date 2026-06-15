@@ -1,32 +1,25 @@
 import os
 import json
 import requests
-from datetime import datetime, timedelta
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# 1. Conectar ao Firebase usando o segredo do cofre
+# 1. Conectar ao Firebase
 firebase_cert = json.loads(os.environ.get('FIREBASE_JSON'))
 cred = credentials.Certificate(firebase_cert)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# 2. Configurar a chamada para a nova API (football-data.org)
-API_KEY = os.environ.get('API_KEY')
-headers = {
-    "X-Auth-Token": API_KEY
-}
-
-# 3. Dicionário de Tradução (Inglês da API -> Seu Padrão)
+# 2. Dicionário de Tradução (ESPN usa inglês)
 TRADUCAO = {
     "South Africa": "Africa do Sul", "Germany": "Alemanha", "Saudi Arabia": "Arabia Saudita",
     "Algeria": "Argelia", "Argentina": "Argentina", "Australia": "Australia", "Austria": "Austria",
     "Belgium": "Belgica", "Bosnia and Herzegovina": "Bosnia", "Brazil": "Brasil", "Cape Verde": "Cabo Verde",
-    "Cape Verde Islands": "Cabo Verde", "Canada": "Canada", "Qatar": "Catar", "Colombia": "Colombia", 
-    "Korea Republic": "Coreia do Sul", "South Korea": "Coreia do Sul", "Côte d'Ivoire": "Costa do Marfim", 
-    "Ivory Coast": "Costa do Marfim", "Croatia": "Croacia", "Curaçao": "Curacau", "Curacao": "Curacau", 
-    "Egypt": "Egito", "Ecuador": "Equador", "Scotland": "Escocia", "Spain": "Espanha", "United States": "Estados Unidos",
-    "USA": "Estados Unidos", "France": "Franca", "Ghana": "Gana", "Haiti": "Haiti", "Netherlands": "Holanda",
+    "Canada": "Canada", "Qatar": "Catar", "Colombia": "Colombia", "South Korea": "Coreia do Sul", 
+    "Côte d'Ivoire": "Costa do Marfim", "Ivory Coast": "Costa do Marfim", "Croatia": "Croacia", 
+    "Curaçao": "Curacau", "Curacao": "Curacau", "Egypt": "Egito", "Ecuador": "Equador", 
+    "Scotland": "Escocia", "Spain": "Espanha", "United States": "Estados Unidos", "USA": "Estados Unidos", 
+    "France": "Franca", "Ghana": "Gana", "Haiti": "Haiti", "Netherlands": "Holanda",
     "England": "Inglaterra", "Iran": "Irã", "Iraq": "Iraque", "Japan": "Japao", "Jordan": "Jordania",
     "Morocco": "Marrocos", "Mexico": "Mexico", "Norway": "Noruega", "New Zealand": "Nova Zelandia",
     "Panama": "Panama", "Paraguay": "Paraguai", "Portugal": "Portugal", "DR Congo": "RD Congo",
@@ -34,7 +27,6 @@ TRADUCAO = {
     "Switzerland": "Suica", "Tunisia": "Tunisia", "Turkey": "Turquia", "Uruguay": "Uruguai", "Uzbekistan": "Uzbequistao"
 }
 
-# 4. Mapeamento dos Jogos (Seu Time Casa x Seu Time Fora -> ID do Jogo)
 JOGOS_IDS = {
     "Mexico x Africa do Sul": "1", "Coreia do Sul x Rep Tcheca": "2", "Rep Tcheca x Africa do Sul": "3", "Coreia do Sul x Mexico": "4", "Rep Tcheca x Mexico": "5", "Africa do Sul x Coreia do Sul": "6",
     "Canada x Bosnia": "7", "Catar x Suica": "8", "Suica x Bosnia": "9", "Catar x Canada": "10", "Suica x Canada": "11", "Bosnia x Catar": "12",
@@ -51,49 +43,39 @@ JOGOS_IDS = {
 }
 
 def atualizar_jogos():
-    hoje = datetime.utcnow() - timedelta(hours=3)
-    data_str = hoje.strftime('%Y-%m-%d')
+    # URL pública de dados da ESPN para a Copa do Mundo
+    url = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world.cup/scoreboard"
     
-# Busca TODOS os jogos disponíveis na API para a data de hoje
-    url = f"https://api.football-data.org/v4/matches?dateFrom={data_str}&dateTo={data_str}"
-    
-    resposta = requests.get(url, headers=headers)
-    dados = resposta.json()
-    
-    if resposta.status_code != 200:
-        print("ERRO DA API NOVA:", dados)
+    try:
+        resposta = requests.get(url)
+        dados = resposta.json()
+    except Exception as e:
+        print("Erro ao tentar ler o sinal da ESPN:", e)
         return
-
-# --- RADAR DE DEBUG ---
-    lista_jogos = dados.get("matches", [])
-    print(f"RADAR LIGADO: A API encontrou {len(lista_jogos)} jogos no total na data {data_str}.")
-    for m in lista_jogos:
-        competicao = m.get("competition", {}).get("name", "Sem Competição")
-        time_casa = m.get("homeTeam", {}).get("name", "Desconhecido")
-        time_fora = m.get("awayTeam", {}).get("name", "Desconhecido")
-        status_api = m.get("status", "SEM_STATUS")
-        print(f" -> [{competicao}] {time_casa} x {time_fora} | Status: {status_api}")
-    # ----------------------
-
+    
     novos_resultados = {}
+    eventos = dados.get("events", [])
+    print(f"RADAR LIGADO: Lendo o sinal da ESPN. Encontrados {len(eventos)} jogos no painel deles.")
 
-    for jogo in dados.get("matches", []):
-        status = jogo["status"]
+    for evento in eventos:
+        # A ESPN crava "STATUS_FINAL" quando o juiz apita
+        status = evento.get("status", {}).get("type", {}).get("name", "")
         
-        # A API marca jogos terminados como "FINISHED"
-        if status == "FINISHED":
-            time_casa_api = jogo["homeTeam"]["name"]
-            time_fora_api = jogo["awayTeam"]["name"]
+        if status == "STATUS_FINAL":
+            competidores = evento.get("competitions", [])[0].get("competitors", [])
             
-            # Puxa nativamente o placar do Tempo Normal (90 minutos)
-            gols_casa = jogo["score"]["regularTime"]["home"]
-            gols_fora = jogo["score"]["regularTime"]["away"]
-
-            # Fallback de segurança caso a API não preencha a chave regularTime em jogos comuns
-            if gols_casa is None:
-                gols_casa = jogo["score"]["fullTime"]["home"]
-            if gols_fora is None:
-                gols_fora = jogo["score"]["fullTime"]["away"]
+            time_casa_api = ""
+            time_fora_api = ""
+            gols_casa = 0
+            gols_fora = 0
+            
+            for comp in competidores:
+                if comp["homeAway"] == "home":
+                    time_casa_api = comp["team"]["name"]
+                    gols_casa = int(comp.get("score", 0))
+                else:
+                    time_fora_api = comp["team"]["name"]
+                    gols_fora = int(comp.get("score", 0))
 
             casa_traduzido = TRADUCAO.get(time_casa_api, time_casa_api)
             fora_traduzido = TRADUCAO.get(time_fora_api, time_fora_api)
@@ -103,16 +85,16 @@ def atualizar_jogos():
 
             if jogo_id:
                 novos_resultados[jogo_id] = {"home": gols_casa, "away": gols_fora}
-                print(f"SUCESSO: Resultado {chave_jogo} ({gols_casa} x {gols_fora}) preparado para o banco. ID: {jogo_id}")
+                print(f"SUCESSO: Resultado {chave_jogo} ({gols_casa} x {gols_fora}) capturado da ESPN! ID: {jogo_id}")
             else:
-                print(f"IGNORADO: Jogo encerrado, mas os nomes falharam no mapeamento ({time_casa_api} x {time_fora_api})")
+                print(f"IGNORADO: Nomes falharam no mapeamento ESPN ({time_casa_api} x {time_fora_api})")
 
     if novos_resultados:
         doc_ref = db.collection('config').doc('results')
         doc_ref.set(novos_resultados, merge=True)
-        print("Banco de dados atualizado sem custos adicionais!")
+        print("Banco de dados atualizado com sucesso!")
     else:
-        print("Nenhum jogo finalizado detectado ou pendente de gravação.")
+        print("Nenhum jogo finalizado pendente de gravação no radar da ESPN.")
 
 if __name__ == "__main__":
     atualizar_jogos()
