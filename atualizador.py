@@ -73,9 +73,15 @@ def atualizar_jogos():
             time_casa_api = jogo["teams"]["home"]["name"]
             time_fora_api = jogo["teams"]["away"]["name"]
             
-            # Pega gols do tempo normal + prorrogação (ignora pênaltis)
-            gols_casa = jogo["score"]["extratime"]["home"] if jogo["score"]["extratime"]["home"] is not None else jogo["goals"]["home"]
-            gols_fora = jogo["score"]["extratime"]["away"] if jogo["score"]["extratime"]["away"] is not None else jogo["goals"]["away"]
+          # Garante EXATAMENTE o placar dos 90 minutos (Full Time), ignorando prorrogação e pênaltis
+            gols_casa = jogo["score"]["fulltime"]["home"]
+            gols_fora = jogo["score"]["fulltime"]["away"]
+            
+            # Fallback de segurança caso ocorra um delay da API no momento do apito
+            if gols_casa is None:
+                gols_casa = jogo["goals"]["home"]
+            if gols_fora is None:
+                gols_fora = jogo["goals"]["away"]
 
             casa_traduzido = TRADUCAO.get(time_casa_api, time_casa_api)
             fora_traduzido = TRADUCAO.get(time_fora_api, time_fora_api)
