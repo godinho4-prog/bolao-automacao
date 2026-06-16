@@ -106,7 +106,7 @@ if resultados_capturados:
     print("Iniciando gravação no banco de dados...")
     
     # Busca a tabela de jogos no Firebase para cruzar os IDs
-    resultados_ref = db.collection('config').doc('results')
+    resultados_ref = db.collection('config').document('results')
     
     # Simula a lista de jogos do seu index.html para fazer o "match" do ID
     # (O script precisa saber o ID do jogo para não bagunçar o seu bolão)
