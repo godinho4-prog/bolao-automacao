@@ -6,15 +6,15 @@ from datetime import datetime, timedelta
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# 1. INICIALIZAÇÃO DO FIREBASE
+# 1. INICIALIZAÇÃO DO FIREBASE E DO BANCO DE DADOS
 firebase_cert = json.loads(os.environ.get('FIREBASE_JSON'))
 cred = credentials.Certificate(firebase_cert)
 if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# 2. DICIONÁRIO COMPLETO DE TRADUÇÃO (BBC -> BOLÃO)
-DICIONARIO = {
+# 2. DICIONÁRIOS DE TRADUÇÃO (BBC -> BOLÃO)
+DICIONARIO_SELECOES = {
     'Brazil': 'Brasil', 'South Africa': 'Africa do Sul', 'Germany': 'Alemanha',
     'Saudi Arabia': 'Arabia Saudita', 'Algeria': 'Argelia', 'South Korea': 'Coreia do Sul',
     'Ivory Coast': 'Costa do Marfim', 'Croatia': 'Croacia', 'Egypt': 'Egito',
@@ -35,10 +35,26 @@ DICIONARIO = {
     'Uzbekistan': 'Uzbequistao'
 }
 
-def traduzir(nome_ingles):
-    return DICIONARIO.get(nome_ingles.strip(), nome_ingles.strip())
+# Rede de segurança cobrindo as variações para os 4 apostados
+DICIONARIO_ARTILHEIROS = {
+    'E. Haaland': 'Haaland', 'Erling Haaland': 'Haaland', 'Haaland': 'Haaland',
+    'K. Mbappe': 'Mbappé', 'K. Mbappé': 'Mbappé', 'Kylian Mbappe': 'Mbappé', 'Kylian Mbappé': 'Mbappé',
+    'H. Kane': 'Kane', 'Harry Kane': 'Kane', 'Kane': 'Kane',
+    'C. Ronaldo': 'Cristiano Ronaldo', 'Cristiano Ronaldo': 'Cristiano Ronaldo', 'Ronaldo': 'Cristiano Ronaldo'
+}
 
-# 3. MATEMÁTICA DO RELÓGIO (ONTEM E HOJE)
+def traduzir_selecao(nome_ingles):
+    return DICIONARIO_SELECOES.get(nome_ingles.strip(), nome_ingles.strip())
+    
+def traduzir_jogador(nome_ingles):
+    # Se a BBC inventar um nome que não está no dicionário, retorna o original
+    return DICIONARIO_ARTILHEIROS.get(nome_ingles.strip(), nome_ingles.strip())
+
+headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+
+# ==========================================
+# MOTOR 1: RASPAGEM DOS PLACARES DOS JOGOS
+# ==========================================
 hoje = datetime.utcnow()
 ontem = hoje - timedelta(days=1)
 
@@ -47,46 +63,38 @@ datas_alvo = [
     hoje.strftime('%Y-%m-%d')
 ]
 
-headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-
 resultados_capturados = []
 
-# 4. A RASPAGEM DA BBC COM AS CLASSES EXATAS DO HTML
+print("--- INICIANDO VARREDURA DE PLACARES ---")
 for data in datas_alvo:
-    url = f"https://www.bbc.com/sport/football/scores-fixtures/{data}"
-    resposta = requests.get(url, headers=headers)
+    url_jogos = f"https://www.bbc.com/sport/football/scores-fixtures/{data}"
+    resposta = requests.get(url_jogos, headers=headers)
     
     if resposta.status_code == 200:
         soup = BeautifulSoup(resposta.text, 'html.parser')
-        
-        # Encontra todos os blocos de jogos
         jogos = soup.find_all('li', class_='ssrcss-18nzily-HeadToHeadWrapper') 
         
         for jogo in jogos:
             try:
-                # Isola os blocos do time da casa e time de fora
                 bloco_casa = jogo.find('div', class_='ssrcss-bon2fo-WithInlineFallback-TeamHome')
                 bloco_fora = jogo.find('div', class_='ssrcss-nvj22c-WithInlineFallback-TeamAway')
                 
-                # Extrai os nomes no formato Desktop
                 time_casa_en = bloco_casa.find('span', class_='ssrcss-1p14tic-DesktopValue').text.strip()
                 time_fora_en = bloco_fora.find('span', class_='ssrcss-1p14tic-DesktopValue').text.strip()
                 
-                # Extrai os gols
                 placar_casa_tag = jogo.find('div', class_='ssrcss-qsbptj-HomeScore')
                 placar_fora_tag = jogo.find('div', class_='ssrcss-fri5a2-AwayScore')
                 
-                # Se a tag do placar não existir ou estiver vazia, o jogo não começou
                 if not placar_casa_tag or not placar_fora_tag or placar_casa_tag.text.strip() == '':
                     continue
                     
                 placar_casa = placar_casa_tag.text.strip()
                 placar_fora = placar_fora_tag.text.strip()
                 
-                time_casa_br = traduzir(time_casa_en)
-                time_fora_br = traduzir(time_fora_en)
+                time_casa_br = traduzir_selecao(time_casa_en)
+                time_fora_br = traduzir_selecao(time_fora_en)
                 
-                print(f"Lido da BBC: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br}")
+                print(f"Jogo: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br}")
                 
                 resultados_capturados.append({
                     'home': time_casa_br,
@@ -94,32 +102,46 @@ for data in datas_alvo:
                     'score_home': placar_casa,
                     'score_away': placar_fora
                 })
-                
-            except Exception as e:
+            except Exception:
                 continue
 
-print("-" * 50)
-print(f"Total de jogos processados e com placar: {len(resultados_capturados)}")
+# ==========================================
+# MOTOR 2: RASPAGEM DA ARTILHARIA
+# ==========================================
+print("\n--- INICIANDO VARREDURA DE ARTILHEIROS ---")
+url_artilheiros = "https://www.bbc.com/sport/football/world-cup/top-scorers"
+resposta_art = requests.get(url_artilheiros, headers=headers)
 
-# 5. GRAVAÇÃO NO FIREBASE
-if resultados_capturados:
-    print("Iniciando gravação no banco de dados...")
+novos_artilheiros = {}
+
+if resposta_art.status_code == 200:
+    soup_art = BeautifulSoup(resposta_art.text, 'html.parser')
+    nomes_html = soup_art.find_all('div', class_='ssrcss-13lnznp-PlayerName')
     
-    # Busca a tabela de jogos no Firebase para cruzar os IDs
+    for nome_tag in nomes_html:
+        nome_bbc = nome_tag.text.strip()
+        nome_br = traduzir_jogador(nome_bbc)
+        
+        gols_tag = nome_tag.find_next('div', class_='ssrcss-nnhz1l-CellWrapper')
+        
+        if gols_tag:
+            try:
+                qtde_gols = int(gols_tag.text.strip())
+                # Como a BBC mostra a lista por ordem, o primeiro valor achado é o que prevalece
+                if nome_br not in novos_artilheiros:
+                    novos_artilheiros[nome_br] = qtde_gols
+                    print(f"Artilheiro lido: {nome_br} com {qtde_gols} gols")
+            except ValueError:
+                continue
+
+# ==========================================
+# GRAVAÇÃO NO FIREBASE
+# ==========================================
+print("\n--- GRAVANDO NO BANCO DE DADOS ---")
+
+if resultados_capturados:
     resultados_ref = db.collection('config').document('results')
     
-    # Simula a lista de jogos do seu index.html para fazer o "match" do ID
-    # (O script precisa saber o ID do jogo para não bagunçar o seu bolão)
-    # Como o script roda isolado, a forma mais segura é baixar o documento inteiro, 
-    # e nós atualizaremos as chaves (ex: "49") com os novos placares.
-    # Nota: No seu app, os nomes estão em BR.
-    
-    # Para blindar, nós pegamos o documento atual de resultados
-    doc_results = resultados_ref.get()
-    banco_atual = doc_results.to_dict() if doc_results.exists else {}
-    
-    # Array espelho do seu index.html com as equipes para acharmos o ID
-    # O Python vai procurar a partida "Franca x Senegal" na lista abaixo para achar o ID 49
     GAMES_LIST = [
         {"id": 1, "home": "Mexico", "away": "Africa do Sul"}, {"id": 2, "home": "Coreia do Sul", "away": "Rep Tcheca"},
         {"id": 3, "home": "Rep Tcheca", "away": "Africa do Sul"}, {"id": 4, "home": "Coreia do Sul", "away": "Mexico"},
@@ -159,23 +181,32 @@ if resultados_capturados:
         {"id": 71, "home": "Panama", "away": "Inglaterra"}, {"id": 72, "home": "Gana", "away": "Croacia"}
     ]
     
-    atualizacoes = {}
-    
+    atualizacoes_placares = {}
     for cap in resultados_capturados:
-        # Tenta achar o ID do jogo batendo os times
         jogo_encontrado = next((g for g in GAMES_LIST if g['home'] == cap['home'] and g['away'] == cap['away']), None)
-        
         if jogo_encontrado:
-            id_str = str(jogo_encontrado['id'])
-            atualizacoes[id_str] = {
+            atualizacoes_placares[str(jogo_encontrado['id'])] = {
                 'home': cap['score_home'],
                 'away': cap['score_away']
             }
             
-    if atualizacoes:
-        resultados_ref.set(atualizacoes, merge=True)
-        print(f"{len(atualizacoes)} placares atualizados no Firebase.")
-    else:
-        print("Nenhum jogo capturado pertence à lista oficial da fase de grupos.")
-        
-    print("Atualização concluída com sucesso.")
+    if atualizacoes_placares:
+        resultados_ref.set(atualizacoes_placares, merge=True)
+        print(f"-> {len(atualizacoes_placares)} placares atualizados.")
+
+if novos_artilheiros:
+    admin_ref = db.collection('config').document('admin_data')
+    doc_admin = admin_ref.get()
+    banco_admin = doc_admin.to_dict() if doc_admin.exists else {}
+    scorers_atuais = banco_admin.get('scorers', {})
+    
+    for jogador, gols in novos_artilheiros.items():
+        if jogador not in scorers_atuais:
+            scorers_atuais[jogador] = {'goals': gols, 'isTop': False}
+        else:
+            scorers_atuais[jogador]['goals'] = gols
+            
+    admin_ref.set({'scorers': scorers_atuais}, merge=True)
+    print(f"-> {len(novos_artilheiros)} artilheiros processados e atualizados na nuvem.")
+
+print("\nExecução 100% Finalizada.")
