@@ -2,7 +2,6 @@ import os
 import json
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -62,41 +61,51 @@ def atualizar_jogos():
     partes = texto_puro.split(' | ')
     
     novos_resultados = {}
-    ano_atual = str(datetime.utcnow().year)
 
+    # Varredura lógica: procura qualquer placar no formato X:Y e identifica os times ao redor
     for i, pedaco in enumerate(partes):
-        if pedaco.startswith(ano_atual + "/") and len(partes) > i + 8:
-            time_casa_api = partes[i + 1]
-            time_fora_api = partes[i + 5]
-            placar_cru = partes[i + 8]
-            
-            if ":" in placar_cru:
-                try:
-                    gols_casa, gols_fora = placar_cru.split(":")
-                    gols_casa = int(gols_casa.strip())
-                    gols_fora = int(gols_fora.strip())
-                except ValueError:
-                    continue
-
-                casa_traduzido = TRADUCAO.get(time_casa_api, time_casa_api)
-                fora_traduzido = TRADUCAO.get(time_fora_api, time_fora_api)
+        placar_limpo = pedaco.strip()
+        
+        # Confirma se o pedaço é estritamente um placar (ex: "1:2")
+        if ":" in placar_limpo and len(placar_limpo) <= 5 and placar_limpo.replace(":", "").isdigit():
+            try:
+                gols_casa, gols_fora = map(int, placar_limpo.split(":"))
+            except ValueError:
+                continue
                 
-                chave_jogo = f"{casa_traduzido} x {fora_traduzido}"
+            # Olha para os blocos anteriores para capturar os times
+            casa = None
+            fora = None
+            
+            # Varre até 10 posições para trás do placar procurando chaves válidas
+            for j in range(max(0, i-10), i):
+                candidato = partes[j].strip()
+                time_traduzido = TRADUCAO.get(candidato, candidato)
+                
+                # Se o nome traduzido faz parte de algum jogo do nosso dicionário
+                if any(time_traduzido in chave for chave in JOGOS_IDS.keys()):
+                    if not casa:
+                        casa = time_traduzido
+                    elif not fora and time_traduzido != casa:
+                        fora = time_traduzido
+            
+            if casa and fora:
+                chave_jogo = f"{casa} x {fora}"
                 jogo_id = JOGOS_IDS.get(chave_jogo)
 
-                if jogo_id:
+                if jogo_id and jogo_id not in novos_resultados:
                     novos_resultados[jogo_id] = {"home": gols_casa, "away": gols_fora}
-                    print(f"SUCESSO: {chave_jogo} ({gols_casa} x {gols_fora}) preparado. ID: {jogo_id}")
+                    print(f"SUCESSO: {chave_jogo} ({gols_casa} x {gols_fora}) capturado por varredura. ID: {jogo_id}")
 
     if novos_resultados:
         try:
             doc_ref = db.collection('config').document('results')
             doc_ref.set(novos_resultados, merge=True)
-            print("Operação concluída. O Firebase foi atualizado com sucesso via Raspagem de Dados.")
+            print("Operação concluída. O Firebase foi atualizado.")
         except Exception as e:
-            print("Erro ao tentar gravar os dados no Firebase:", e)
+            print("Erro ao gravar os dados no Firebase:", e)
     else:
-        print("Nenhum jogo finalizado encontrado na raspagem de hoje.")
+        print("Nenhum jogo encontrado na estrutura da página atual.")
 
 if __name__ == "__main__":
     atualizar_jogos()
