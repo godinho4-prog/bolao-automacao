@@ -109,3 +109,4 @@ def atualizar_jogos():
 
 if __name__ == "__main__":
     atualizar_jogos()
+ 
