@@ -2,7 +2,7 @@ name: Atualizador de Placares do Bolao
 
 on:
   schedule:
-    - cron: '*/5 15-23,0-4 * 6,7 *'
+    - cron: '*/5 15-23,0-4 * * *''
   workflow_dispatch:
 
 jobs:
