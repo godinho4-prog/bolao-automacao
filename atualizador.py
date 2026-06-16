@@ -7,33 +7,38 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 # 1. INICIALIZAÇÃO DO FIREBASE
-try:
-    firebase_cert = json.loads(os.environ.get('FIREBASE_JSON'))
-    cred = credentials.Certificate(firebase_cert)
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    print("Aviso Firebase:", e)
+firebase_cert = json.loads(os.environ.get('FIREBASE_JSON'))
+cred = credentials.Certificate(firebase_cert)
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred)
+db = firestore.client()
 
-# 2. DICIONÁRIO DE TRADUÇÃO (BBC -> BOLÃO)
+# 2. DICIONÁRIO COMPLETO DE TRADUÇÃO (BBC -> BOLÃO)
 DICIONARIO = {
     'Brazil': 'Brasil', 'South Africa': 'Africa do Sul', 'Germany': 'Alemanha',
     'Saudi Arabia': 'Arabia Saudita', 'Algeria': 'Argelia', 'South Korea': 'Coreia do Sul',
     'Ivory Coast': 'Costa do Marfim', 'Croatia': 'Croacia', 'Egypt': 'Egito',
     'Ecuador': 'Equador', 'Scotland': 'Escocia', 'Spain': 'Espanha',
-    'United States': 'Estados Unidos', 'France': 'Franca', 'Netherlands': 'Holanda',
-    'England': 'Inglaterra', 'Iran': 'Irã', 'Japan': 'Japao', 'Morocco': 'Marrocos',
-    'Mexico': 'Mexico', 'Norway': 'Noruega', 'New Zealand': 'Nova Zelandia',
-    'Paraguay': 'Paraguai', 'DR Congo': 'RD Congo', 'Czech Republic': 'Rep Tcheca',
-    'Czechia': 'Rep Tcheca', 'Sweden': 'Suecia', 'Switzerland': 'Suica', 
-    'Turkey': 'Turquia', 'Uruguay': 'Uruguai', 'Senegal': 'Senegal'
+    'United States': 'Estados Unidos', 'USA': 'Estados Unidos', 'France': 'Franca',
+    'Netherlands': 'Holanda', 'England': 'Inglaterra', 'Iran': 'Irã',
+    'Japan': 'Japao', 'Morocco': 'Marrocos', 'Mexico': 'Mexico',
+    'Norway': 'Noruega', 'New Zealand': 'Nova Zelandia', 'Paraguay': 'Paraguai',
+    'DR Congo': 'RD Congo', 'Democratic Republic of Congo': 'RD Congo',
+    'Czech Republic': 'Rep Tcheca', 'Czechia': 'Rep Tcheca',
+    'Sweden': 'Suecia', 'Switzerland': 'Suica', 'Turkey': 'Turquia', 'Uruguay': 'Uruguai',
+    'Belgium': 'Belgica', 'Cape Verde': 'Cabo Verde', 'Tunisia': 'Tunisia',
+    'Argentina': 'Argentina', 'Australia': 'Australia', 'Austria': 'Austria',
+    'Bosnia': 'Bosnia', 'Bosnia and Herzegovina': 'Bosnia', 'Canada': 'Canada',
+    'Qatar': 'Catar', 'Colombia': 'Colombia', 'Curacao': 'Curacau',
+    'Ghana': 'Gana', 'Haiti': 'Haiti', 'Iraq': 'Iraque', 'Jordan': 'Jordania',
+    'Panama': 'Panama', 'Portugal': 'Portugal', 'Senegal': 'Senegal',
+    'Uzbekistan': 'Uzbequistao'
 }
 
 def traduzir(nome_ingles):
     return DICIONARIO.get(nome_ingles.strip(), nome_ingles.strip())
 
-# 3. MATEMÁTICA DO RELÓGIO
+# 3. MATEMÁTICA DO RELÓGIO (ONTEM E HOJE)
 hoje = datetime.utcnow()
 ontem = hoje - timedelta(days=1)
 
@@ -44,9 +49,9 @@ datas_alvo = [
 
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
-resultados_extraidos = {}
+resultados_capturados = []
 
-# 4. A RASPAGEM BLINDADA
+# 4. A RASPAGEM DA BBC
 for data in datas_alvo:
     url = f"https://www.bbc.com/sport/football/scores-fixtures/{data}"
     resposta = requests.get(url, headers=headers)
@@ -54,54 +59,42 @@ for data in datas_alvo:
     if resposta.status_code == 200:
         soup = BeautifulSoup(resposta.text, 'html.parser')
         
-        # Ignora os códigos malucos e busca apenas a raiz da classe
-        jogos = soup.find_all('li', class_=lambda c: c and 'HeadToHeadWrapper' in c) 
+        # --- ATENÇÃO ---
+        # Insere aqui a tua lógica exata de busca (find_all) que testaste e funcionou.
+        jogos = soup.find_all('article', class_='INSERE_A_CLASSE_AQUI') 
         
         for jogo in jogos:
             try:
-                # Isola os blocos de casa e fora
-                time_casa_bloco = jogo.find('div', class_=lambda c: c and 'TeamHome' in c)
-                time_fora_bloco = jogo.find('div', class_=lambda c: c and 'TeamAway' in c)
-
-                # Extrai os nomes
-                time_casa_en = time_casa_bloco.find('span', class_=lambda c: c and 'DesktopValue' in c).text.strip()
-                time_fora_en = time_fora_bloco.find('span', class_=lambda c: c and 'DesktopValue' in c).text.strip()
+                # Insere as variáveis de extração de equipas e golos aqui
+                time_casa_en = jogo.find('span', class_='CLASSE_CASA').text
+                time_fora_en = jogo.find('span', class_='CLASSE_FORA').text
+                placar_casa = jogo.find('span', class_='GOLO_CASA').text
+                placar_fora = jogo.find('span', class_='GOLO_FORA').text
                 
-                # Extrai os gols
-                placar_casa = jogo.find('div', class_=lambda c: c and 'HomeScore' in c).text.strip()
-                placar_fora = jogo.find('div', class_=lambda c: c and 'AwayScore' in c).text.strip()
-                
-                # Traduz
                 time_casa_br = traduzir(time_casa_en)
                 time_fora_br = traduzir(time_fora_en)
                 
-                # Monta a chave combinada (ex: "Franca_Senegal") ou conforme o seu padrão
-                chave = f"{time_casa_br}_{time_fora_br}"
-                resultados_extraidos[chave] = {
-                    "home": placar_casa,
-                    "away": placar_fora
-                }
-                
                 print(f"Lido da BBC: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br}")
                 
+                resultados_capturados.append({
+                    'home': time_casa_br,
+                    'away': time_fora_br,
+                    'score_home': placar_casa,
+                    'score_away': placar_fora
+                })
+                
             except Exception as e:
-                # Se for um jogo que ainda não começou, as classes de gol não existem. O robô ignora e segue a vida.
                 continue
 
-print("--------------------------------------------------")
-print(f"Total de jogos processados e com placar: {len(resultados_extraidos)}")
+print("-" * 50)
+print(f"Total de jogos processados e com placar: {len(resultados_capturados)}")
 
-# =====================================================================
-# 5. GRAVAÇÃO NO FIREBASE
-# =====================================================================
-if resultados_extraidos:
+# 5. GRAVAÇÃO NA BASE DE DADOS
+if resultados_capturados:
     print("Iniciando gravação no banco de dados...")
     
-    # -> COLE AQUI O SEU CÓDIGO ANTIGO QUE GRAVAVA NO FIREBASE <-
-    # Geralmente é algo na linha de:
-    # doc_ref = db.collection('resultados').document('oficiais')
-    # doc_ref.set(resultados_extraidos, merge=True)
+    # --- ATENÇÃO ---
+    # Insere aqui a tua rotina de gravação no Firebase que fez o cruzamento 
+    # dos resultados com o ID dos jogos.
     
     print("Atualização concluída com sucesso.")
-else:
-    print("Nenhum placar para atualizar no momento.")
