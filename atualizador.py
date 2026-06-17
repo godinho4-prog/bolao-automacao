@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import re
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import firebase_admin
@@ -42,7 +43,7 @@ DICIONARIO_ARTILHEIROS = {
     'C. Ronaldo': 'Cristiano Ronaldo', 'Cristiano Ronaldo': 'Cristiano Ronaldo', 'Ronaldo': 'Cristiano Ronaldo'
 }
 
-# Filtro estrito: O robô vai ignorar qualquer jogador que não esteja nesta lista
+# Filtro estrito de artilheiros
 ALVOS_BOLAO = ['Haaland', 'Mbappé', 'Kane', 'Cristiano Ronaldo']
 
 def traduzir_selecao(nome_ingles):
@@ -70,7 +71,7 @@ print("--- INICIANDO VARREDURA DE PLACARES ---")
 for data in datas_alvo:
     url_jogos = f"https://www.bbc.com/sport/football/scores-fixtures/{data}"
     resposta = requests.get(url_jogos, headers=headers)
-    resposta.encoding = 'utf-8'  # Força a leitura correta de acentos
+    resposta.encoding = 'utf-8'
     
     if resposta.status_code == 200:
         soup = BeautifulSoup(resposta.text, 'html.parser')
@@ -96,13 +97,29 @@ for data in datas_alvo:
                 time_casa_br = traduzir_selecao(time_casa_en)
                 time_fora_br = traduzir_selecao(time_fora_en)
                 
-                print(f"Jogo: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br}")
+                # --- A LÓGICA DA GUILHOTINA (MATA-MATA) ---
+                texto_jogo = jogo.text.upper()
+                is_extra_time = False
+                
+                # Regra 1: Textos diretos que indicam prorrogação ou pênaltis
+                if any(x in texto_jogo for x in ['AET', 'EXTRA TIME', 'PENS', 'PENALTIES', 'SHOOTOUT']):
+                    is_extra_time = True
+                else:
+                    # Regra 2: Isolando os números (Diferencia 90+5 de 92)
+                    tempos = re.findall(r'\b(\d+)(?:\+\d+)?\s*(?:MIN|\')', texto_jogo)
+                    for t in tempos:
+                        if int(t) > 90:
+                            is_extra_time = True
+                            break
+                
+                print(f"Jogo: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br} | Prorrogação: {is_extra_time}")
                 
                 resultados_capturados.append({
                     'home': time_casa_br,
                     'away': time_fora_br,
                     'score_home': placar_casa,
-                    'score_away': placar_fora
+                    'score_away': placar_fora,
+                    'is_extra_time': is_extra_time
                 })
             except Exception:
                 continue
@@ -113,7 +130,7 @@ for data in datas_alvo:
 print("\n--- INICIANDO VARREDURA DE ARTILHEIROS ---")
 url_artilheiros = "https://www.bbc.com/sport/football/world-cup/top-scorers"
 resposta_art = requests.get(url_artilheiros, headers=headers)
-resposta_art.encoding = 'utf-8'  # Força a leitura correta de acentos
+resposta_art.encoding = 'utf-8'
 
 novos_artilheiros = {}
 
@@ -130,8 +147,6 @@ if resposta_art.status_code == 200:
         if gols_tag:
             try:
                 qtde_gols = int(gols_tag.text.strip())
-                
-                # A trava: se o jogador lido está nos alvos e ainda não foi listado no loop
                 if nome_br in ALVOS_BOLAO and nome_br not in novos_artilheiros:
                     novos_artilheiros[nome_br] = qtde_gols
                     print(f"Artilheiro alvo lido: {nome_br} com {qtde_gols} gols")
@@ -143,9 +158,12 @@ if resposta_art.status_code == 200:
 # ==========================================
 print("\n--- GRAVANDO NO BANCO DE DADOS ---")
 
+# Fazemos o download do status ATUAL dos resultados para saber se algum jogo já foi travado
+resultados_ref = db.collection('config').document('results')
+doc_resultados = resultados_ref.get()
+banco_resultados = doc_resultados.to_dict() if doc_resultados.exists else {}
+
 if resultados_capturados:
-    resultados_ref = db.collection('config').document('results')
-    
     GAMES_LIST = [
         {"id": 1, "home": "Mexico", "away": "Africa do Sul"}, {"id": 2, "home": "Coreia do Sul", "away": "Rep Tcheca"},
         {"id": 3, "home": "Rep Tcheca", "away": "Africa do Sul"}, {"id": 4, "home": "Coreia do Sul", "away": "Mexico"},
@@ -189,14 +207,28 @@ if resultados_capturados:
     for cap in resultados_capturados:
         jogo_encontrado = next((g for g in GAMES_LIST if g['home'] == cap['home'] and g['away'] == cap['away']), None)
         if jogo_encontrado:
-            atualizacoes_placares[str(jogo_encontrado['id'])] = {
+            game_id_str = str(jogo_encontrado['id'])
+            
+            # Consulta o Firebase: Esse jogo já foi guilhotinado numa varredura passada?
+            jogo_no_banco = banco_resultados.get(game_id_str, {})
+            if jogo_no_banco.get('locked_90') == True:
+                continue # Pula o jogo, a porta já está trancada.
+                
+            payload = {
                 'home': cap['score_home'],
                 'away': cap['score_away']
             }
             
+            # Se for o momento exato em que a BBC acusou prorrogação, ativamos o cadeado
+            if cap['is_extra_time']:
+                payload['locked_90'] = True
+                print(f"🔒 GUILHOTINA DESCIDA: {cap['home']} x {cap['away']} trancado no tempo normal.")
+                
+            atualizacoes_placares[game_id_str] = payload
+            
     if atualizacoes_placares:
         resultados_ref.set(atualizacoes_placares, merge=True)
-        print(f"-> {len(atualizacoes_placares)} placares atualizados.")
+        print(f"-> {len(atualizacoes_placares)} placares atualizados ou travados.")
 
 if novos_artilheiros:
     admin_ref = db.collection('config').document('admin_data')
