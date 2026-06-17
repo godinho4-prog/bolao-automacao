@@ -60,10 +60,12 @@ headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 # ==========================================
 hoje = datetime.utcnow()
 ontem = hoje - timedelta(days=1)
+amanha = hoje + timedelta(days=1)
 
 datas_alvo = [
     ontem.strftime('%Y-%m-%d'),
-    hoje.strftime('%Y-%m-%d')
+    hoje.strftime('%Y-%m-%d'),
+    amanha.strftime('%Y-%m-%d')
 ]
 
 resultados_capturados = []
