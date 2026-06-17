@@ -25,6 +25,7 @@ DICIONARIO_SELECOES = {
     'Japan': 'Japao', 'Morocco': 'Marrocos', 'Mexico': 'Mexico',
     'Norway': 'Noruega', 'New Zealand': 'Nova Zelandia', 'Paraguay': 'Paraguai',
     'DR Congo': 'RD Congo', 'Democratic Republic of Congo': 'RD Congo',
+    'Congo DR': 'RD Congo', 'Congo RD': 'RD Congo', 'Congo': 'RD Congo',
     'Czech Republic': 'Rep Tcheca', 'Czechia': 'Rep Tcheca',
     'Sweden': 'Suecia', 'Switzerland': 'Suica', 'Turkey': 'Turquia', 'Uruguai': 'Uruguai',
     'Uruguay': 'Uruguai', 'Belgium': 'Belgica', 'Cape Verde': 'Cabo Verde', 
