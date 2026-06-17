@@ -99,7 +99,6 @@ for data in datas_alvo:
                 
                 # --- A LÓGICA DA GUILHOTINA (MATA-MATA) ---
                 texto_jogo = jogo.text.upper()
-                if time_casa_br == "Franca": texto_jogo = "AET 3 X 1"
                 is_extra_time = False
                 
                 # Regra 1: Textos diretos que indicam prorrogação ou pênaltis
