@@ -97,16 +97,19 @@ for data in datas_alvo:
                 time_casa_br = traduzir_selecao(time_casa_en)
                 time_fora_br = traduzir_selecao(time_fora_en)
                 
-                # --- A LÓGICA DA GUILHOTINA (MATA-MATA) ---
-                texto_jogo = jogo.text.upper()
+                # --- A LÓGICA DA GUILHOTINA (MATA-MATA) REFINADA ---
+                # A caça ao reloginho usando a classe pai confirmada no print
+                status_tag = jogo.find('div', class_=re.compile(r'MatchProgressWrapper'))
+                status_texto = status_tag.text.strip().upper() if status_tag else ""
+                
                 is_extra_time = False
                 
-                # Regra 1: Textos diretos que indicam prorrogação ou pênaltis
-                if any(x in texto_jogo for x in ['AET', 'EXTRA TIME', 'PENS', 'PENALTIES', 'SHOOTOUT']):
+                # Regra 1: Textos diretos que indicam prorrogação ou pênaltis no status isolado
+                if any(x in status_texto for x in ['AET', 'EXTRA', 'PENS', 'PENALTIES', 'SHOOTOUT']):
                     is_extra_time = True
                 else:
                     # Regra 2: Isolando os números (Diferencia 90+5 de 92)
-                    tempos = re.findall(r'\b(\d+)(?:\+\d+)?\s*(?:MIN|\')', texto_jogo)
+                    tempos = re.findall(r'(\d+)', status_texto)
                     for t in tempos:
                         if int(t) > 90:
                             is_extra_time = True
