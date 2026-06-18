@@ -6,6 +6,11 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
+# ISSO AQUI MATA OS ROBÔS ENGASGADOS DO PASSADO
+concurrency:
+  group: "raspagem-bbc"
+  cancel-in-progress: true
+  
 jobs:
   atualizar_firebase:
     runs-on: ubuntu-latest
