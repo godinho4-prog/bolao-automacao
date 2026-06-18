@@ -72,7 +72,9 @@ resultados_capturados = []
 
 print("--- INICIANDO VARREDURA DE PLACARES ---")
 for data in datas_alvo:
-    url_jogos = f"https://www.bbc.com/sport/football/scores-fixtures/{data}"
+    # A variável 'hoje' já existe no topo do arquivo. Usamos ela pra enganar o cache da BBC.
+    timestamp_agora = int(hoje.timestamp())
+    url_jogos = f"https://www.bbc.com/sport/football/scores-fixtures/{data}?_={timestamp_agora}"
     resposta = requests.get(url_jogos, headers=headers)
     resposta.encoding = 'utf-8'
     
