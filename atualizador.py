@@ -213,7 +213,16 @@ if resultados_capturados:
     
     atualizacoes_placares = {}
     for cap in resultados_capturados:
+        # Tenta achar o jogo na ordem normal
         jogo_encontrado = next((g for g in GAMES_LIST if g['home'] == cap['home'] and g['away'] == cap['away']), None)
+        invertido = False
+        
+        # Se não achou, tenta achar com os times invertidos
+        if not jogo_encontrado:
+            jogo_encontrado = next((g for g in GAMES_LIST if g['home'] == cap['away'] and g['away'] == cap['home']), None)
+            if jogo_encontrado:
+                invertido = True
+
         if jogo_encontrado:
             game_id_str = str(jogo_encontrado['id'])
             
@@ -222,9 +231,17 @@ if resultados_capturados:
             if jogo_no_banco.get('locked_90') == True:
                 continue # Pula o jogo, a porta já está trancada.
                 
+            # Ajusta os placares se a BBC tiver listado o jogo ao contrário
+            if invertido:
+                placar_home = cap['score_away']
+                placar_away = cap['score_home']
+            else:
+                placar_home = cap['score_home']
+                placar_away = cap['score_away']
+
             payload = {
-                'home': cap['score_home'],
-                'away': cap['score_away']
+                'home': placar_home,
+                'away': placar_away
             }
             
             # Se for o momento exato em que a BBC acusou prorrogação, ativamos o cadeado
@@ -233,6 +250,7 @@ if resultados_capturados:
                 print(f"🔒 GUILHOTINA DESCIDA: {cap['home']} x {cap['away']} trancado no tempo normal.")
                 
             atualizacoes_placares[game_id_str] = payload
+
             
     if atualizacoes_placares:
         resultados_ref.set(atualizacoes_placares, merge=True)
