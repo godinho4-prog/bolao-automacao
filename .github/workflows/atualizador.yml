@@ -1,16 +1,13 @@
 name: Atualizador de Placares do Bolao
 
 on:
-  schedule:
-    # Rodando a cada 5 minutos, nas janelas de horário, TODOS os dias da semana
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 # ISSO AQUI MATA OS ROBÔS ENGASGADOS DO PASSADO
 concurrency:
   group: "raspagem-bbc"
   cancel-in-progress: true
-  
+
 jobs:
   atualizar_firebase:
     runs-on: ubuntu-latest
