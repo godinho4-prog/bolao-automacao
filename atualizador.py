@@ -127,7 +127,8 @@ for data in datas_alvo:
                     'away': time_fora_br,
                     'score_home': placar_casa,
                     'score_away': placar_fora,
-                    'is_extra_time': is_extra_time
+                    'is_extra_time': is_extra_time,
+                    'status': status_texto
                 })
             except Exception:
                 continue
@@ -241,7 +242,8 @@ if resultados_capturados:
 
             payload = {
                 'home': placar_home,
-                'away': placar_away
+                'away': placar_away,
+                'status': cap.get('status', '')
             }
             
             # Se for o momento exato em que a BBC acusou prorrogação, ativamos o cadeado
