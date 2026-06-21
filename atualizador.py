@@ -14,7 +14,7 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# 2. DICIONÁRIOS DE TRADUÇÃO E FILTROS (BBC -> BOLÃO)
+# 2. DICIONÁRIOS E FUNÇÕES DE SUPORTE
 DICIONARIO_SELECOES = {
     'Brazil': 'Brasil', 'South Africa': 'Africa do Sul', 'Germany': 'Alemanha',
     'Saudi Arabia': 'Arabia Saudita', 'Algeria': 'Argelia', 'South Korea': 'Coreia do Sul',
@@ -44,13 +44,25 @@ DICIONARIO_ARTILHEIROS = {
     'C. Ronaldo': 'Cristiano Ronaldo', 'Cristiano Ronaldo': 'Cristiano Ronaldo', 'Ronaldo': 'Cristiano Ronaldo'
 }
 
-# Filtro estrito de artilheiros
 ALVOS_BOLAO = ['Haaland', 'Mbappé', 'Kane', 'Cristiano Ronaldo']
 
 def traduzir_selecao(nome_ingles):
     return DICIONARIO_SELECOES.get(nome_ingles.strip(), nome_ingles.strip())
     
 def traduzir_jogador(nome_ingles):
+    return DICIONARIO_ARTILHEIROS.get(nome_ingles.strip(), nome_ingles.strip())
+
+def get_progress_value(status_str):
+    s = str(status_str).upper()
+    if 'FT' in s or 'FULL' in s: return 999
+    if 'AET' in s: return 998
+    if 'PEN' in s: return 997
+    if 'HT' in s or 'HALF' in s: return 45
+    nums = re.findall(r'(\d+)', s)
+    if nums: return int(nums[0])
+    return 0
+
+headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
 # ==========================================
 # MOTOR 1: RASPAGEM DOS PLACARES DOS JOGOS
@@ -69,7 +81,6 @@ resultados_capturados = []
 
 print("--- INICIANDO VARREDURA DE PLACARES ---")
 for data in datas_alvo:
-    # A variável 'hoje' já existe no topo do arquivo. Usamos ela pra enganar o cache da BBC.
     timestamp_agora = int(hoje.timestamp())
     url_jogos = f"https://www.bbc.com/sport/football/scores-fixtures/{data}?_={timestamp_agora}"
     resposta = requests.get(url_jogos, headers=headers)
@@ -83,6 +94,9 @@ for data in datas_alvo:
             try:
                 bloco_casa = jogo.find('div', class_='ssrcss-bon2fo-WithInlineFallback-TeamHome')
                 bloco_fora = jogo.find('div', class_='ssrcss-nvj22c-WithInlineFallback-TeamAway')
+                
+                if not bloco_casa or not bloco_fora:
+                    continue
                 
                 time_casa_en = bloco_casa.find('span', class_='ssrcss-1p14tic-DesktopValue').text.strip()
                 time_fora_en = bloco_fora.find('span', class_='ssrcss-1p14tic-DesktopValue').text.strip()
@@ -99,25 +113,22 @@ for data in datas_alvo:
                 time_casa_br = traduzir_selecao(time_casa_en)
                 time_fora_br = traduzir_selecao(time_fora_en)
                 
-                # --- A LÓGICA DA GUILHOTINA (MATA-MATA) REFINADA ---
-                # A caça ao reloginho usando a classe pai confirmada no print
-                status_tag = jogo.find('div', class_=re.compile(r'MatchProgressWrapper'))
+                # Busca status em múltiplas classes da BBC para não perder jogos finalizados em 0x0
+                status_tag = jogo.find(class_=re.compile(r'(MatchProgressWrapper|MatchStatus|StatusWrapper)', re.I))
                 status_texto = status_tag.text.strip().upper() if status_tag else ""
                 
                 is_extra_time = False
                 
-                # Regra 1: Textos diretos que indicam prorrogação ou pênaltis no status isolado
                 if any(x in status_texto for x in ['AET', 'EXTRA', 'PENS', 'PENALTIES', 'SHOOTOUT']):
                     is_extra_time = True
                 else:
-                    # Regra 2: Isolando os números (Diferencia 90+5 de 92)
                     tempos = re.findall(r'(\d+)', status_texto)
                     for t in tempos:
                         if int(t) > 90:
                             is_extra_time = True
                             break
                 
-                print(f"Jogo: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br} | Prorrogação: {is_extra_time}")
+                print(f"Jogo: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br} | Status: {status_texto}")
                 
                 resultados_capturados.append({
                     'home': time_casa_br,
@@ -127,7 +138,7 @@ for data in datas_alvo:
                     'is_extra_time': is_extra_time,
                     'status': status_texto
                 })
-            except Exception:
+            except Exception as e:
                 continue
 
 # ==========================================
@@ -164,7 +175,6 @@ if resposta_art.status_code == 200:
 # ==========================================
 print("\n--- GRAVANDO NO BANCO DE DADOS ---")
 
-# Fazemos o download do status ATUAL dos resultados para saber se algum jogo já foi travado
 resultados_ref = db.collection('config').document('results')
 doc_resultados = resultados_ref.get()
 banco_resultados = doc_resultados.to_dict() if doc_resultados.exists else {}
@@ -211,11 +221,9 @@ if resultados_capturados:
     
     atualizacoes_placares = {}
     for cap in resultados_capturados:
-        # Tenta achar o jogo na ordem normal
         jogo_encontrado = next((g for g in GAMES_LIST if g['home'] == cap['home'] and g['away'] == cap['away']), None)
         invertido = False
         
-        # Se não achou, tenta achar com os times invertidos
         if not jogo_encontrado:
             jogo_encontrado = next((g for g in GAMES_LIST if g['home'] == cap['away'] and g['away'] == cap['home']), None)
             if jogo_encontrado:
@@ -224,12 +232,10 @@ if resultados_capturados:
         if jogo_encontrado:
             game_id_str = str(jogo_encontrado['id'])
             
-            # Consulta o Firebase: Esse jogo já foi guilhotinado numa varredura passada?
             jogo_no_banco = banco_resultados.get(game_id_str, {})
             if jogo_no_banco.get('locked_90') == True:
-                continue # Pula o jogo, a porta já está trancada.
+                continue
                 
-            # Ajusta os placares se a BBC tiver listado o jogo ao contrário
             if invertido:
                 placar_home = cap['score_away']
                 placar_away = cap['score_home']
@@ -237,7 +243,7 @@ if resultados_capturados:
                 placar_home = cap['score_home']
                 placar_away = cap['score_away']
 
-            # 🛡️ BLINDAGEM ANTI-CDN (Evita o Efeito Sanfona) 🛡️
+            # 🛡️ BLINDAGEM ANTI-CDN (Efeito Sanfona) 🛡️
             status_novo = cap.get('status', '')
             status_banco = jogo_no_banco.get('status', '')
             
@@ -245,12 +251,10 @@ if resultados_capturados:
             progresso_banco = get_progress_value(status_banco)
             
             if progresso_novo > 0 and progresso_banco > 0:
-                # Se o relógio raspado andou pra trás, batemos num servidor velho da BBC. Ignora.
                 if progresso_novo < progresso_banco:
-                    print(f"⚠️ CDN Desatualizado: Ignorando {cap['home']} no tempo {status_novo} (Banco já tem {status_banco})")
+                    print(f"⚠️ CDN Desatualizado: Ignorando {cap['home']} no tempo {status_novo} (Banco ja tem {status_banco})")
                     continue
                 
-                # Se for o exato mesmo minuto, mas os gols sumiram repentinamente, é o CDN oscilando antes do relógio virar. Ignora.
                 if progresso_novo == progresso_banco:
                     try:
                         db_h = int(jogo_no_banco.get('home', 0) or 0)
@@ -258,7 +262,7 @@ if resultados_capturados:
                         novo_h = int(placar_home)
                         novo_a = int(placar_away)
                         if (novo_h + novo_a) < (db_h + db_a):
-                            print(f"⚠️ CDN Desatualizado: Ignorando redução de gols {novo_h}x{novo_a} no mesmo minuto.")
+                            print(f"⚠️ CDN Desatualizado: Ignorando reducao de gols {novo_h}x{novo_a} no mesmo minuto.")
                             continue
                     except ValueError:
                         pass
@@ -266,16 +270,14 @@ if resultados_capturados:
             payload = {
                 'home': placar_home,
                 'away': placar_away,
-                'status': cap.get('status', '')
+                'status': status_novo
             }
             
-            # Se for o momento exato em que a BBC acusou prorrogação, ativamos o cadeado
             if cap['is_extra_time']:
                 payload['locked_90'] = True
                 print(f"🔒 GUILHOTINA DESCIDA: {cap['home']} x {cap['away']} trancado no tempo normal.")
                 
             atualizacoes_placares[game_id_str] = payload
-
             
     if atualizacoes_placares:
         resultados_ref.set(atualizacoes_placares, merge=True)
@@ -294,6 +296,6 @@ if novos_artilheiros:
             scorers_atuais[jogador]['goals'] = gols
             
     admin_ref.set({'scorers': scorers_atuais}, merge=True)
-    print(f"-> {len(novos_artilheiros)} artilheiros processados e atualizados na nuvem.")
+    print(f"-> {len(novos_artilheiros)} artilheiros processados.")
 
 print("\nExecução 100% Finalizada.")
