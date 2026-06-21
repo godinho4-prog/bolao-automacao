@@ -51,9 +51,6 @@ def traduzir_selecao(nome_ingles):
     return DICIONARIO_SELECOES.get(nome_ingles.strip(), nome_ingles.strip())
     
 def traduzir_jogador(nome_ingles):
-    return DICIONARIO_ARTILHEIROS.get(nome_ingles.strip(), nome_ingles.strip())
-
-headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
 # ==========================================
 # MOTOR 1: RASPAGEM DOS PLACARES DOS JOGOS
