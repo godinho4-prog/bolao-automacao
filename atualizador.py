@@ -237,6 +237,32 @@ if resultados_capturados:
                 placar_home = cap['score_home']
                 placar_away = cap['score_away']
 
+            # 🛡️ BLINDAGEM ANTI-CDN (Evita o Efeito Sanfona) 🛡️
+            status_novo = cap.get('status', '')
+            status_banco = jogo_no_banco.get('status', '')
+            
+            progresso_novo = get_progress_value(status_novo)
+            progresso_banco = get_progress_value(status_banco)
+            
+            if progresso_novo > 0 and progresso_banco > 0:
+                # Se o relógio raspado andou pra trás, batemos num servidor velho da BBC. Ignora.
+                if progresso_novo < progresso_banco:
+                    print(f"⚠️ CDN Desatualizado: Ignorando {cap['home']} no tempo {status_novo} (Banco já tem {status_banco})")
+                    continue
+                
+                # Se for o exato mesmo minuto, mas os gols sumiram repentinamente, é o CDN oscilando antes do relógio virar. Ignora.
+                if progresso_novo == progresso_banco:
+                    try:
+                        db_h = int(jogo_no_banco.get('home', 0) or 0)
+                        db_a = int(jogo_no_banco.get('away', 0) or 0)
+                        novo_h = int(placar_home)
+                        novo_a = int(placar_away)
+                        if (novo_h + novo_a) < (db_h + db_a):
+                            print(f"⚠️ CDN Desatualizado: Ignorando redução de gols {novo_h}x{novo_a} no mesmo minuto.")
+                            continue
+                    except ValueError:
+                        pass
+
             payload = {
                 'home': placar_home,
                 'away': placar_away,
