@@ -31,7 +31,7 @@ DICIONARIO_SELECOES = {
     'Uruguay': 'Uruguai', 'Belgium': 'Belgica', 'Cape Verde': 'Cabo Verde', 
     'Tunisia': 'Tunisia', 'Argentina': 'Argentina', 'Australia': 'Australia', 
     'Austria': 'Austria', 'Bosnia': 'Bosnia', 'Bosnia-Herzegovina': 'Bosnia', 
-    'Canada': 'Canada', 'Qatar': 'Catar', 'Colombia': 'Colombia', 'Curacao': 'Curacau',
+    'Canada': 'Canada', 'Qatar': 'Catar', 'Colombia': 'Colombia', 'Curaçao': 'Curacau',
     'Ghana': 'Gana', 'Haiti': 'Haiti', 'Iraq': 'Iraque', 'Jordan': 'Jordania',
     'Panama': 'Panama', 'Portugal': 'Portugal', 'Senegal': 'Senegal',
     'Uzbekistan': 'Uzbequistao'
