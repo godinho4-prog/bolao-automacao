@@ -258,7 +258,8 @@ if resultados_capturados:
         {"id": 65, "home": "Colombia", "away": "Portugal"}, {"id": 66, "home": "RD Congo", "away": "Uzbequistao"},
         {"id": 67, "home": "Inglaterra", "away": "Croacia"}, {"id": 68, "home": "Gana", "away": "Panama"},
         {"id": 69, "home": "Inglaterra", "away": "Gana"}, {"id": 70, "home": "Panama", "away": "Croacia"},
-        {"id": 71, "home": "Panama", "away": "Inglaterra"}, {"id": 72, "home": "Gana", "away": "Croacia"}
+        {"id": 71, "home": "Panama", "away": "Inglaterra"}, {"id": 72, "home": "Gana", "away": "Croacia"},
+        {"id": 999, "home": "Portugal", "away": "Franca"}
     ]
     
     # INJEÇÃO DO MATA-MATA: Adiciona os jogos na lista de rastreio se o Admin já tiver definido os times!
