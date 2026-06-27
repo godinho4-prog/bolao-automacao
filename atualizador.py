@@ -71,11 +71,14 @@ hoje = datetime.utcnow()
 ontem = hoje - timedelta(days=1)
 amanha = hoje + timedelta(days=1)
 
+# 🛠️ MÁQUINA DO TEMPO (TESTE DE PÊNALTIS) 🛠️
+# Quando for testar, COMENTE as 4 linhas abaixo e DESCOMENTE a data de 2024.
 datas_alvo = [
     ontem.strftime('%Y-%m-%d'),
     hoje.strftime('%Y-%m-%d'),
     amanha.strftime('%Y-%m-%d')
 ]
+# datas_alvo = ['2024-07-05'] # Quartas da Euro 2024: Portugal x França (Pênaltis)
 
 resultados_capturados = []
 
@@ -127,7 +130,39 @@ for data in datas_alvo:
                         if int(t) > 90:
                             is_extra_time = True
                             break
+                            
+                # --- NOVA LÓGICA: CAÇADOR DE PÊNALTIS CIRÚRGICO (VIA DATA-TESTID) ---
+                pen_home = ""
+                pen_away = ""
                 
+                pen_div = jogo.find('div', attrs={"data-testid": "penalties-text"})
+                if pen_div:
+                    texto_pen = pen_div.text.strip()
+                    match_pens = re.search(r'(\d+)\s*-\s*(\d+)', texto_pen)
+                    
+                    if match_pens:
+                        v1 = int(match_pens.group(1))
+                        v2 = int(match_pens.group(2))
+                        maior = str(max(v1, v2))
+                        menor = str(min(v1, v2))
+                        
+                        span_vencedor = pen_div.find('span')
+                        if span_vencedor:
+                            vencedor_en = span_vencedor.text.strip()
+                            vencedor_br = traduzir_selecao(vencedor_en)
+                            
+                            if vencedor_br == time_casa_br:
+                                pen_home = maior
+                                pen_away = menor
+                            else:
+                                pen_home = menor
+                                pen_away = maior
+                        else:
+                            pen_home = str(v1)
+                            pen_away = str(v2)
+                            
+                        print(f"🎯 Pênaltis capturados na agulha! Casa: {pen_home} x Fora: {pen_away}")
+
                 print(f"Jogo: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br} | Status: {status_texto}")
                 
                 resultados_capturados.append({
@@ -135,6 +170,8 @@ for data in datas_alvo:
                     'away': time_fora_br,
                     'score_home': placar_casa,
                     'score_away': placar_fora,
+                    'pen_home': pen_home,
+                    'pen_away': pen_away,
                     'is_extra_time': is_extra_time,
                     'status': status_texto
                 })
@@ -252,9 +289,13 @@ if resultados_capturados:
             if invertido:
                 placar_home = cap['score_away']
                 placar_away = cap['score_home']
+                placar_pen_home = cap.get('pen_away', '')
+                placar_pen_away = cap.get('pen_home', '')
             else:
                 placar_home = cap['score_home']
                 placar_away = cap['score_away']
+                placar_pen_home = cap.get('pen_home', '')
+                placar_pen_away = cap.get('pen_away', '')
 
             # 🛡️ BLINDAGEM ANTI-CDN (Efeito Sanfona) 🛡️
             status_novo = cap.get('status', '')
@@ -287,6 +328,11 @@ if resultados_capturados:
                 'away_live': placar_away,
                 'status': status_novo
             }
+
+            # INJEÇÃO DOS PÊNALTIS NO BANCO
+            if placar_pen_home and placar_pen_away:
+                payload['home_pen'] = placar_pen_home
+                payload['away_pen'] = placar_pen_away
             
             ja_travado = jogo_no_banco.get('locked_90', False)
 
