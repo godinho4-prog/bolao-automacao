@@ -247,8 +247,7 @@ if resultados_capturados:
             game_id_str = str(jogo_encontrado['id'])
             
             jogo_no_banco = banco_resultados.get(game_id_str, {})
-            if jogo_no_banco.get('locked_90') == True:
-                continue
+            # AQUI A GENTE NÃO DÁ MAIS 'CONTINUE'. O SCRIPT CONTINUA LENDO ATÉ O JUIZ IR PRO CHUVEIRO.
                 
             if invertido:
                 placar_home = cap['score_away']
@@ -271,8 +270,9 @@ if resultados_capturados:
                 
                 if progresso_novo == progresso_banco:
                     try:
-                        db_h = int(jogo_no_banco.get('home', 0) or 0)
-                        db_a = int(jogo_no_banco.get('away', 0) or 0)
+                        # Lê os gols do Live para não ser enganado quando a prorrogação começar
+                        db_h = int(jogo_no_banco.get('home_live', jogo_no_banco.get('home', 0)) or 0)
+                        db_a = int(jogo_no_banco.get('away_live', jogo_no_banco.get('away', 0)) or 0)
                         novo_h = int(placar_home)
                         novo_a = int(placar_away)
                         if (novo_h + novo_a) < (db_h + db_a):
@@ -281,25 +281,32 @@ if resultados_capturados:
                     except ValueError:
                         pass
 
+            # O placar VISUAL recebe as atualizações até o apito final absoluto
             payload = {
-                'home': placar_home,
-                'away': placar_away,
+                'home_live': placar_home,
+                'away_live': placar_away,
                 'status': status_novo
             }
             
-            if cap['is_extra_time']:
-                payload['locked_90'] = True
-                print(f"🔒 GUILHOTINA DESCIDA: {cap['home']} x {cap['away']} trancado no tempo normal.")
-                
-            # LÓGICA DOS 15 MINUTOS: Marca o horário exato do fim do jogo
+            ja_travado = jogo_no_banco.get('locked_90', False)
+
+            if not ja_travado:
+                # Enquanto não chegar na prorrogação, a matemática acompanha o visual
+                payload['home'] = placar_home
+                payload['away'] = placar_away
+
+                # O raspador detectou AET ou +90 min
+                if cap['is_extra_time']:
+                    payload['locked_90'] = True
+                    print(f"🔒 GUILHOTINA DESCIDA: Pontos do bolão trancados em {placar_home}x{placar_away}.")
+            
+            # LÓGICA DOS 15 MINUTOS: Carimba a hora exata da morte da partida
             if any(x in status_novo for x in ['FT', 'FULL', 'AET', 'PEN', 'PENS', 'SHOOTOUT']):
-                # Se já tiver o horário salvo no banco, preserva ele. Se não, carimba a hora atual.
                 if 'finished_at' in jogo_no_banco:
                     payload['finished_at'] = jogo_no_banco['finished_at']
                 else:
-                    # Adicionamos o 'Z' no final da string ISO para o Javascript entender perfeitamente que é formato UTC
                     payload['finished_at'] = datetime.utcnow().isoformat() + 'Z'
-                    print(f"⏱️ FIM DE JOGO DETECTADO: {cap['home']} x {cap['away']} - Iniciando 15 min de tolerância na tela.")
+                    print(f"⏱️ FIM DE JOGO DETECTADO: Iniciando 15 min de tolerância na tela.")
                     
             atualizacoes_placares[game_id_str] = payload
             
