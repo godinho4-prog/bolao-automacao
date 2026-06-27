@@ -72,9 +72,11 @@ ontem = hoje - timedelta(days=1)
 amanha = hoje + timedelta(days=1)
 
 # 🛠️ MÁQUINA DO TEMPO (TESTE DE PÊNALTIS) 🛠️
-# Quando for testar, COMENTE as 4 linhas abaixo e DESCOMENTE a data de 2024.
-datas_alvo = ['2024-07-05']
-# datas_alvo = ['2024-07-05'] # Quartas da Euro 2024: Portugal x França (Pênaltis)
+datas_alvo = [
+    ontem.strftime('%Y-%m-%d'),
+    hoje.strftime('%Y-%m-%d'),
+    amanha.strftime('%Y-%m-%d')
+]
 
 resultados_capturados = []
 
