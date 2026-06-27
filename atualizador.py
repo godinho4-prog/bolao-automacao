@@ -179,6 +179,11 @@ resultados_ref = db.collection('config').document('results')
 doc_resultados = resultados_ref.get()
 banco_resultados = doc_resultados.to_dict() if doc_resultados.exists else {}
 
+# NOVIDADE: Puxa os times do Mata-Mata que já foram definidos no Admin
+ko_ref = db.collection('config').document('ko_games')
+doc_ko = ko_ref.get()
+banco_ko = doc_ko.to_dict() if doc_ko.exists else {}
+
 if resultados_capturados:
     GAMES_LIST = [
         {"id": 1, "home": "Mexico", "away": "Africa do Sul"}, {"id": 2, "home": "Coreia do Sul", "away": "Rep Tcheca"},
@@ -218,6 +223,15 @@ if resultados_capturados:
         {"id": 69, "home": "Inglaterra", "away": "Gana"}, {"id": 70, "home": "Panama", "away": "Croacia"},
         {"id": 71, "home": "Panama", "away": "Inglaterra"}, {"id": 72, "home": "Gana", "away": "Croacia"}
     ]
+    
+    # INJEÇÃO DO MATA-MATA: Adiciona os jogos na lista de rastreio se o Admin já tiver definido os times!
+    for ko_id, ko_data in banco_ko.items():
+        if ko_data.get('home') and ko_data.get('away'):
+            GAMES_LIST.append({
+                "id": int(ko_id),
+                "home": ko_data.get('home'),
+                "away": ko_data.get('away')
+            })
     
     atualizacoes_placares = {}
     for cap in resultados_capturados:
