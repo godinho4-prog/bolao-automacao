@@ -277,6 +277,16 @@ if resultados_capturados:
                 payload['locked_90'] = True
                 print(f"🔒 GUILHOTINA DESCIDA: {cap['home']} x {cap['away']} trancado no tempo normal.")
                 
+            # LÓGICA DOS 15 MINUTOS: Marca o horário exato do fim do jogo
+            if any(x in status_novo for x in ['FT', 'FULL', 'AET', 'PEN', 'PENS', 'SHOOTOUT']):
+                # Se já tiver o horário salvo no banco, preserva ele. Se não, carimba a hora atual.
+                if 'finished_at' in jogo_no_banco:
+                    payload['finished_at'] = jogo_no_banco['finished_at']
+                else:
+                    # Adicionamos o 'Z' no final da string ISO para o Javascript entender perfeitamente que é formato UTC
+                    payload['finished_at'] = datetime.utcnow().isoformat() + 'Z'
+                    print(f"⏱️ FIM DE JOGO DETECTADO: {cap['home']} x {cap['away']} - Iniciando 15 min de tolerância na tela.")
+                    
             atualizacoes_placares[game_id_str] = payload
             
     if atualizacoes_placares:
