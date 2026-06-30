@@ -53,28 +53,34 @@ def traduzir_jogador(nome_ingles):
     return DICIONARIO_ARTILHEIROS.get(nome_ingles.strip(), nome_ingles.strip())
 
 def get_progress_value(status_str):
-    s = str(status_str or '').upper().strip()
-
-    if 'WIN' in s and 'PEN' in s:
-        return 997
-    if s.startswith('PENALTIES'):
-        return 996
-    if s == 'ET':
-        return 995
-    if 'AET' in s:
-        return 998
-    if 'FT' in s or 'FULL' in s:
-        return 999
-    if 'HT' in s or 'HALF' in s or s == 'HT-ET':
-        return 45
-
-    minute_match = re.search(r'(\d{1,3})(?:\+\d{1,2})?\'', s)
-    if minute_match:
-        return int(minute_match.group(1))
-
+    s = str(status_str).upper()
+    if 'FT' in s or 'FULL' in s: return 999
+    if 'AET' in s: return 998
+    if 'PEN' in s: return 997
+    if 'HT' in s or 'HALF' in s: return 45
+    nums = re.findall(r'(\d+)', s)
+    if nums: return int(nums[0])
     return 0
 
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+REQUEST_TIMEOUT = 15
+
+def baixar_pagina(url, descricao):
+    """Baixa uma página da BBC com timeout e logs legíveis."""
+    try:
+        resposta = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        if resposta.status_code != 200:
+            print(f"❌ BBC respondeu {resposta.status_code} ao buscar {descricao}. URL: {url}")
+            return None
+        resposta.encoding = 'utf-8'
+        return resposta
+    except requests.exceptions.Timeout:
+        print(f"⏰ Timeout ao buscar {descricao} após {REQUEST_TIMEOUT}s. URL: {url}")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Erro de rede ao buscar {descricao}: {type(e).__name__}: {e}. URL: {url}")
+        return None
+
 
 # ==========================================
 # MOTOR 1: RASPAGEM DOS PLACARES DOS JOGOS
@@ -91,20 +97,29 @@ datas_alvo = [
 ]
 
 resultados_capturados = []
+paginas_ok = 0
+blocos_de_jogo_encontrados = 0
 
 print("--- INICIANDO VARREDURA DE PLACARES ---")
 for data in datas_alvo:
     timestamp_agora = int(hoje.timestamp())
     url_jogos = f"https://www.bbc.com/sport/football/scores-fixtures/{data}?_={timestamp_agora}"
-    resposta = requests.get(url_jogos, headers=headers)
-    resposta.encoding = 'utf-8'
+    resposta = baixar_pagina(url_jogos, f"placares BBC {data}")
     
-    if resposta.status_code == 200:
-        soup = BeautifulSoup(resposta.text, 'html.parser')
-        jogos = soup.find_all('li', class_='ssrcss-18nzily-HeadToHeadWrapper') 
-        
-        for jogo in jogos:
-            try:
+    if resposta is None:
+        continue
+
+    paginas_ok += 1
+    soup = BeautifulSoup(resposta.text, 'html.parser')
+    jogos = soup.find_all('li', class_='ssrcss-18nzily-HeadToHeadWrapper')
+    blocos_de_jogo_encontrados += len(jogos)
+    
+    print(f"📅 {data}: página OK, {len(jogos)} blocos de jogo encontrados.")
+    if len(jogos) == 0:
+        print(f"⚠️ Nenhum bloco de jogo encontrado em {data}. Se havia jogo nesse dia, a BBC pode ter mudado o HTML.")
+    
+    for jogo in jogos:
+        try:
                 bloco_casa = jogo.find('div', class_='ssrcss-bon2fo-WithInlineFallback-TeamHome')
                 bloco_fora = jogo.find('div', class_='ssrcss-nvj22c-WithInlineFallback-TeamAway')
                 
@@ -185,22 +200,33 @@ for data in datas_alvo:
                     'is_extra_time': is_extra_time,
                     'status': status_texto
                 })
-            except Exception as e:
-                continue
+        except Exception as e:
+            try:
+                resumo_bloco = jogo.get_text(" ", strip=True)[:180]
+            except Exception:
+                resumo_bloco = "sem resumo disponível"
+            print(f"⚠️ Erro ao processar um bloco de jogo em {data}: {type(e).__name__}: {e}. Trecho: {resumo_bloco}")
+            continue
+
+print(f"📊 Resumo da varredura de placares: {paginas_ok}/{len(datas_alvo)} páginas OK; {blocos_de_jogo_encontrados} blocos de jogo encontrados; {len(resultados_capturados)} jogos com placar capturados.")
+if len(resultados_capturados) == 0:
+    print("⚠️ Nenhum placar foi capturado. Se hoje/ontem/amanhã tem jogo da Copa, confira se a BBC mudou o layout ou se houve falha de rede.")
 
 # ==========================================
 # MOTOR 2: RASPAGEM DA ARTILHARIA
 # ==========================================
 print("\n--- INICIANDO VARREDURA DE ARTILHEIROS ---")
 url_artilheiros = "https://www.bbc.com/sport/football/world-cup/top-scorers"
-resposta_art = requests.get(url_artilheiros, headers=headers)
-resposta_art.encoding = 'utf-8'
+resposta_art = baixar_pagina(url_artilheiros, "artilharia BBC")
 
 novos_artilheiros = {}
 
-if resposta_art.status_code == 200:
+if resposta_art is not None:
     soup_art = BeautifulSoup(resposta_art.text, 'html.parser')
     nomes_html = soup_art.find_all('div', class_='ssrcss-13lnznp-PlayerName')
+    print(f"🎯 Artilharia: {len(nomes_html)} nomes encontrados na página.")
+    if len(nomes_html) == 0:
+        print("⚠️ Nenhum nome encontrado na artilharia. A BBC pode ter mudado o HTML dessa página.")
     
     for nome_tag in nomes_html:
         nome_bbc = nome_tag.text.strip()
@@ -369,6 +395,8 @@ if resultados_capturados:
     if atualizacoes_placares:
         resultados_ref.set(atualizacoes_placares, merge=True)
         print(f"-> {len(atualizacoes_placares)} placares atualizados ou travados.")
+    else:
+        print("ℹ️ Nenhum placar capturado bateu com a lista de jogos do bolão. Pode ser normal em dia sem jogo relevante; se havia jogo, confira nomes/traduções/confrontos.")
 
 if novos_artilheiros:
     admin_ref = db.collection('config').document('admin_data')
