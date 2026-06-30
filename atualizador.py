@@ -387,14 +387,17 @@ if resultados_capturados:
             ja_travado = jogo_no_banco.get('locked_90', False)
 
             if not ja_travado:
-                # Enquanto não chegar na prorrogação, a matemática acompanha o visual
-                payload['home'] = placar_home
-                payload['away'] = placar_away
-
-                # O raspador detectou AET ou +90 min
                 if cap['is_extra_time']:
+                    # Ao entrar na prorrogação/pênaltis, preserva o placar matemático que já estava no banco.
+                    # Isso evita que um gol capturado já na prorrogação contamine home/away.
+                    payload['home'] = jogo_no_banco.get('home', placar_home)
+                    payload['away'] = jogo_no_banco.get('away', placar_away)
                     payload['locked_90'] = True
-                    print(f"🔒 GUILHOTINA DESCIDA: Pontos do bolão trancados em {placar_home}x{placar_away}.")
+                    print(f"🔒 GUILHOTINA DESCIDA: Pontos do bolão trancados em {payload['home']}x{payload['away']}.")
+                else:
+                    # Enquanto não chegar na prorrogação, a matemática acompanha o visual.
+                    payload['home'] = placar_home
+                    payload['away'] = placar_away
             
             # LÓGICA DOS 15 MINUTOS: Carimba a hora exata da morte da partida
             if any(x in status_novo for x in ['FT', 'FULL', 'AET', 'PEN', 'PENS', 'SHOOTOUT']):
