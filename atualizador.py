@@ -145,12 +145,17 @@ for data in datas_alvo:
                 status_tag = jogo.find(class_=re.compile(r'(MatchProgressWrapper|MatchStatus|StatusWrapper)', re.I))
                 status_texto = status_tag.text.strip().upper() if status_tag else ""
                 
-                is_extra_time = False
+                                is_extra_time = False
+                status_limpo = status_texto.strip().upper()
                 
-                if any(x in status_texto for x in ['AET', 'EXTRA', 'PENS', 'PENALTIES', 'SHOOTOUT']):
+                if (
+                    status_limpo == 'ET' or
+                    status_limpo.startswith('ET ') or
+                    any(x in status_limpo for x in ['AET', 'EXTRA', 'PENS', 'PENALTIES', 'SHOOTOUT'])
+                ):
                     is_extra_time = True
                 else:
-                    tempos = re.findall(r'(\d+)', status_texto)
+                    tempos = re.findall(r'(\d+)', status_limpo)
                     for t in tempos:
                         if int(t) > 90:
                             is_extra_time = True
