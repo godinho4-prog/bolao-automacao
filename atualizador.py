@@ -193,6 +193,15 @@ for data in datas_alvo:
                             
                         print(f"🎯 Pênaltis capturados na agulha! Casa: {pen_home} x Fora: {pen_away}")
 
+                # Fallback: durante a disputa, a BBC pode colocar algo como "Penalties 0-0" no status.
+                # Nesse caso, ainda não há vencedor, então assumimos a ordem casa-fora.
+                if not pen_home and not pen_away:
+                    match_pens_status = re.search(r'PENALT(?:IES|Y|IS)?[^0-9]*(\d+)\s*[-xX]\s*(\d+)', status_texto, re.I)
+                    if match_pens_status:
+                        pen_home = match_pens_status.group(1)
+                        pen_away = match_pens_status.group(2)
+                        print(f"🎯 Pênaltis capturados pelo status! Casa: {pen_home} x Fora: {pen_away}")
+
                 print(f"Jogo: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br} | Status: {status_texto}")
                 
                 resultados_capturados.append({
