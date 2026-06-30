@@ -399,8 +399,56 @@ if resultados_capturados:
                     payload['home'] = placar_home
                     payload['away'] = placar_away
             
-            # LÓGICA DOS 15 MINUTOS: Carimba a hora exata da morte da partida
-            if any(x in status_novo for x in ['FT', 'FULL', 'AET', 'PEN', 'PENS', 'SHOOTOUT']):
+            # LÓGICA DOS 15 MINUTOS: Carimba a hora exata da morte da partida.
+            # Cuidado: "Penalties 0-0" não é fim de jogo; é disputa em andamento.
+            try:
+                eh_mata_mata = int(game_id_str) >= 73
+            except ValueError:
+                eh_mata_mata = False
+
+            def int_safe(v):
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    return None
+
+            placar_90_home = int_safe(payload.get('home', jogo_no_banco.get('home', placar_home)))
+            placar_90_away = int_safe(payload.get('away', jogo_no_banco.get('away', placar_away)))
+            placar_live_home = int_safe(payload.get('home_live', jogo_no_banco.get('home_live', placar_home)))
+            placar_live_away = int_safe(payload.get('away_live', jogo_no_banco.get('away_live', placar_away)))
+
+            tem_penaltis = (
+                payload.get('home_pen') not in [None, ''] and
+                payload.get('away_pen') not in [None, '']
+            )
+
+            empate_90_mata_mata = (
+                eh_mata_mata and
+                placar_90_home is not None and
+                placar_90_away is not None and
+                placar_90_home == placar_90_away
+            )
+
+            empate_visual = (
+                placar_live_home is not None and
+                placar_live_away is not None and
+                placar_live_home == placar_live_away
+            )
+
+            status_tem_ft_normal = ('FT' in status_novo or 'FULL' in status_novo)
+            status_tem_aet = ('AET' in status_novo or 'AFTER EXTRA TIME' in status_novo)
+            status_tem_pen = ('PEN' in status_novo or 'SHOOTOUT' in status_novo)
+
+            fim_no_tempo_normal = status_tem_ft_normal and not empate_90_mata_mata
+            fim_na_prorrogacao = status_tem_aet and (not empate_visual or tem_penaltis)
+            fim_por_penaltis_confirmado = status_tem_pen and tem_penaltis and (
+                'WIN' in status_novo or
+                'WON' in status_novo or
+                'PEN_FT' in status_novo or
+                'PENS FT' in status_novo
+            )
+
+            if fim_no_tempo_normal or fim_na_prorrogacao or fim_por_penaltis_confirmado:
                 if 'finished_at' in jogo_no_banco:
                     payload['finished_at'] = jogo_no_banco['finished_at']
                 else:
