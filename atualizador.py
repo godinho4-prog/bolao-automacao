@@ -145,7 +145,7 @@ for data in datas_alvo:
                 status_tag = jogo.find(class_=re.compile(r'(MatchProgressWrapper|MatchStatus|StatusWrapper)', re.I))
                 status_texto = status_tag.text.strip().upper() if status_tag else ""
                 
-                                is_extra_time = False
+                is_extra_time = False
                 status_limpo = status_texto.strip().upper()
                 
                 if (
