@@ -53,13 +53,25 @@ def traduzir_jogador(nome_ingles):
     return DICIONARIO_ARTILHEIROS.get(nome_ingles.strip(), nome_ingles.strip())
 
 def get_progress_value(status_str):
-    s = str(status_str).upper()
-    if 'FT' in s or 'FULL' in s: return 999
-    if 'AET' in s: return 998
-    if 'PEN' in s: return 997
-    if 'HT' in s or 'HALF' in s: return 45
-    nums = re.findall(r'(\d+)', s)
-    if nums: return int(nums[0])
+    s = str(status_str or '').upper().strip()
+
+    if 'WIN' in s and 'PEN' in s:
+        return 997
+    if s.startswith('PENALTIES'):
+        return 996
+    if s == 'ET':
+        return 995
+    if 'AET' in s:
+        return 998
+    if 'FT' in s or 'FULL' in s:
+        return 999
+    if 'HT' in s or 'HALF' in s or s == 'HT-ET':
+        return 45
+
+    minute_match = re.search(r'(\d{1,3})(?:\+\d{1,2})?\'', s)
+    if minute_match:
+        return int(minute_match.group(1))
+
     return 0
 
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
