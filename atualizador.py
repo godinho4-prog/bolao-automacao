@@ -160,6 +160,7 @@ for data in datas_alvo:
                 # --- NOVA LÓGICA: CAÇADOR DE PÊNALTIS CIRÚRGICO (VIA DATA-TESTID) ---
                 pen_home = ""
                 pen_away = ""
+                pen_finished = False
                 
                 pen_div = jogo.find('div', attrs={"data-testid": "penalties-text"})
                 if pen_div:
@@ -187,7 +188,8 @@ for data in datas_alvo:
                             pen_home = str(v1)
                             pen_away = str(v2)
                             
-                        print(f"🎯 Pênaltis capturados na agulha! Casa: {pen_home} x Fora: {pen_away}")
+                        pen_finished = True
+                        print(f"🎯 Pênaltis finalizados capturados na agulha! Casa: {pen_home} x Fora: {pen_away}")
 
                 print(f"Jogo: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br} | Status: {status_texto}")
                 
@@ -198,6 +200,7 @@ for data in datas_alvo:
                     'score_away': placar_fora,
                     'pen_home': pen_home,
                     'pen_away': pen_away,
+                    'pen_finished': pen_finished,
                     'is_extra_time': is_extra_time,
                     'status': status_texto
                 })
@@ -367,9 +370,7 @@ if resultados_capturados:
             }
 
             # INJEÇÃO DOS PÊNALTIS NO BANCO
-            if placar_pen_home and placar_pen_away:
-                payload['home_pen'] = placar_pen_home
-                payload['away_pen'] = placar_pen_away
+
             
             ja_travado = jogo_no_banco.get('locked_90', False)
 
