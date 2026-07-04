@@ -41,10 +41,11 @@ DICIONARIO_ARTILHEIROS = {
     'E. Haaland': 'Haaland', 'Erling Haaland': 'Haaland', 'Haaland': 'Haaland',
     'K. Mbappe': 'Mbappé', 'K. Mbappé': 'Mbappé', 'Kylian Mbappe': 'Mbappé', 'Kylian Mbappé': 'Mbappé',
     'H. Kane': 'Kane', 'Harry Kane': 'Kane', 'Kane': 'Kane',
-    'C. Ronaldo': 'Cristiano Ronaldo', 'Cristiano Ronaldo': 'Cristiano Ronaldo', 'Ronaldo': 'Cristiano Ronaldo'
+    'C. Ronaldo': 'Cristiano Ronaldo', 'Cristiano Ronaldo': 'Cristiano Ronaldo', 'Ronaldo': 'Cristiano Ronaldo',
+    'L. Messi': 'Messi', 'Lionel Messi': 'Messi', 'Messi': 'Messi'
 }
 
-ALVOS_BOLAO = ['Haaland', 'Mbappé', 'Kane', 'Cristiano Ronaldo']
+ALVOS_BOLAO = ['Haaland', 'Mbappé', 'Kane', 'Cristiano Ronaldo', 'Messi']
 
 def traduzir_selecao(nome_ingles):
     return DICIONARIO_SELECOES.get(nome_ingles.strip(), nome_ingles.strip())
@@ -146,16 +147,11 @@ for data in datas_alvo:
                 status_texto = status_tag.text.strip().upper() if status_tag else ""
                 
                 is_extra_time = False
-                status_limpo = status_texto.strip().upper()
                 
-                if (
-                    status_limpo == 'ET' or
-                    status_limpo.startswith('ET ') or
-                    any(x in status_limpo for x in ['AET', 'EXTRA', 'PENS', 'PENALTIES', 'SHOOTOUT'])
-                ):
+                if any(x in status_texto for x in ['AET', 'EXTRA', 'PENS', 'PENALTIES', 'SHOOTOUT']):
                     is_extra_time = True
                 else:
-                    tempos = re.findall(r'(\d+)', status_limpo)
+                    tempos = re.findall(r'(\d+)', status_texto)
                     for t in tempos:
                         if int(t) > 90:
                             is_extra_time = True
@@ -192,15 +188,6 @@ for data in datas_alvo:
                             pen_away = str(v2)
                             
                         print(f"🎯 Pênaltis capturados na agulha! Casa: {pen_home} x Fora: {pen_away}")
-
-                # Fallback: durante a disputa, a BBC pode colocar algo como "Penalties 0-0" no status.
-                # Nesse caso, ainda não há vencedor, então assumimos a ordem casa-fora.
-                if not pen_home and not pen_away:
-                    match_pens_status = re.search(r'PENALT(?:IES|Y|IS)?[^0-9]*(\d+)\s*[-xX]\s*(\d+)', status_texto, re.I)
-                    if match_pens_status:
-                        pen_home = match_pens_status.group(1)
-                        pen_away = match_pens_status.group(2)
-                        print(f"🎯 Pênaltis capturados pelo status! Casa: {pen_home} x Fora: {pen_away}")
 
                 print(f"Jogo: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br} | Status: {status_texto}")
                 
@@ -387,68 +374,17 @@ if resultados_capturados:
             ja_travado = jogo_no_banco.get('locked_90', False)
 
             if not ja_travado:
+                # Enquanto não chegar na prorrogação, a matemática acompanha o visual
+                payload['home'] = placar_home
+                payload['away'] = placar_away
+
+                # O raspador detectou AET ou +90 min
                 if cap['is_extra_time']:
-                    # Ao entrar na prorrogação/pênaltis, preserva o placar matemático que já estava no banco.
-                    # Isso evita que um gol capturado já na prorrogação contamine home/away.
-                    payload['home'] = jogo_no_banco.get('home', placar_home)
-                    payload['away'] = jogo_no_banco.get('away', placar_away)
                     payload['locked_90'] = True
-                    print(f"🔒 GUILHOTINA DESCIDA: Pontos do bolão trancados em {payload['home']}x{payload['away']}.")
-                else:
-                    # Enquanto não chegar na prorrogação, a matemática acompanha o visual.
-                    payload['home'] = placar_home
-                    payload['away'] = placar_away
+                    print(f"🔒 GUILHOTINA DESCIDA: Pontos do bolão trancados em {placar_home}x{placar_away}.")
             
-            # LÓGICA DOS 15 MINUTOS: Carimba a hora exata da morte da partida.
-            # Cuidado: "Penalties 0-0" não é fim de jogo; é disputa em andamento.
-            try:
-                eh_mata_mata = int(game_id_str) >= 73
-            except ValueError:
-                eh_mata_mata = False
-
-            def int_safe(v):
-                try:
-                    return int(v)
-                except (TypeError, ValueError):
-                    return None
-
-            placar_90_home = int_safe(payload.get('home', jogo_no_banco.get('home', placar_home)))
-            placar_90_away = int_safe(payload.get('away', jogo_no_banco.get('away', placar_away)))
-            placar_live_home = int_safe(payload.get('home_live', jogo_no_banco.get('home_live', placar_home)))
-            placar_live_away = int_safe(payload.get('away_live', jogo_no_banco.get('away_live', placar_away)))
-
-            tem_penaltis = (
-                payload.get('home_pen') not in [None, ''] and
-                payload.get('away_pen') not in [None, '']
-            )
-
-            empate_90_mata_mata = (
-                eh_mata_mata and
-                placar_90_home is not None and
-                placar_90_away is not None and
-                placar_90_home == placar_90_away
-            )
-
-            empate_visual = (
-                placar_live_home is not None and
-                placar_live_away is not None and
-                placar_live_home == placar_live_away
-            )
-
-            status_tem_ft_normal = ('FT' in status_novo or 'FULL' in status_novo)
-            status_tem_aet = ('AET' in status_novo or 'AFTER EXTRA TIME' in status_novo)
-            status_tem_pen = ('PEN' in status_novo or 'SHOOTOUT' in status_novo)
-
-            fim_no_tempo_normal = status_tem_ft_normal and not empate_90_mata_mata
-            fim_na_prorrogacao = status_tem_aet and (not empate_visual or tem_penaltis)
-            fim_por_penaltis_confirmado = status_tem_pen and tem_penaltis and (
-                'WIN' in status_novo or
-                'WON' in status_novo or
-                'PEN_FT' in status_novo or
-                'PENS FT' in status_novo
-            )
-
-            if fim_no_tempo_normal or fim_na_prorrogacao or fim_por_penaltis_confirmado:
+            # LÓGICA DOS 15 MINUTOS: Carimba a hora exata da morte da partida
+            if any(x in status_novo for x in ['FT', 'FULL', 'AET', 'PEN', 'PENS', 'SHOOTOUT']):
                 if 'finished_at' in jogo_no_banco:
                     payload['finished_at'] = jogo_no_banco['finished_at']
                 else:
