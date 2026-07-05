@@ -586,6 +586,14 @@ if resultados_capturados:
                     payload['art_base'] = art_base_novo
 
             # INJEÇÃO DOS PÊNALTIS NO BANCO
+            if placar_pen_home != "" and placar_pen_away != "":
+                payload['home_pen'] = placar_pen_home
+                payload['away_pen'] = placar_pen_away
+
+            if cap.get('pen_finished'):
+                payload['pen_finished'] = True
+            elif jogo_no_banco.get('pen_finished') is True:
+                payload['pen_finished'] = True
 
             
             ja_travado = jogo_no_banco.get('locked_90', False)
