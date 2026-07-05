@@ -511,6 +511,18 @@ if resultados_capturados:
             if not isinstance(gols_diretos_jogo, dict):
                 gols_diretos_jogo = {}
 
+            # Evita criar art_live retroativo para jogos antigos que só estão sendo raspados
+            # porque o robô consulta ontem/hoje/amanhã por segurança de fuso.
+            # Se o jogo já tinha finished_at no banco, ele já passou da janela útil do ao vivo.
+            # Nesse caso, só mantemos art_live se ele já existia antes.
+            jogo_finalizado_agora = any(x in status_novo for x in ['FT', 'FULL', 'AET', 'PEN', 'PENS', 'SHOOTOUT'])
+            jogo_ja_estava_finalizado_no_banco = 'finished_at' in jogo_no_banco
+
+            if jogo_finalizado_agora and jogo_ja_estava_finalizado_no_banco and not jogo_no_banco.get('art_live'):
+                if gols_diretos_jogo:
+                    print(f"ℹ️ Ignorando artilheiro retroativo em jogo já finalizado no banco: {game_id_str} {cap['home']} x {cap['away']} -> {gols_diretos_jogo}")
+                gols_diretos_jogo = {}
+
             if gols_diretos_jogo or gols_delta_artilheiro or jogo_no_banco.get('art_live'):
                 art_live_atual = jogo_no_banco.get('art_live', {})
                 if not isinstance(art_live_atual, dict):
@@ -540,25 +552,9 @@ if resultados_capturados:
                             if jogador not in art_base_novo:
                                 dados_atuais = scorers_atuais.get(jogador, {})
                                 try:
-                                    total_banco = int(dados_atuais.get('goals', 0) or 0)
+                                    art_base_novo[jogador] = int(dados_atuais.get('goals', 0) or 0)
                                 except Exception:
-                                    total_banco = 0
-
-                                total_bbc_artilharia = None
-                                if jogador in novos_artilheiros:
-                                    try:
-                                        total_bbc_artilharia = int(novos_artilheiros.get(jogador, 0) or 0)
-                                    except Exception:
-                                        total_bbc_artilharia = None
-
-                                # Caso 1: a página de artilharia acumulada já atualizou nesta execução.
-                                # Ex.: banco tinha 5, BBC já mostra 7, jogo tem 2 gols -> base correta = 5.
-                                if total_bbc_artilharia is not None and total_bbc_artilharia >= total_banco + gols_no_jogo_int:
-                                    art_base_novo[jogador] = max(0, total_bbc_artilharia - gols_no_jogo_int)
-                                else:
-                                    # Caso normal ao vivo: a artilharia acumulada ainda não atualizou.
-                                    # Ex.: banco ainda tem 5, jogo tem 2 gols -> base correta = 5.
-                                    art_base_novo[jogador] = total_banco
+                                    art_base_novo[jogador] = 0
 
                             print(f"⚽ art_live direto BBC no jogo {game_id_str}: {jogador} {gols_no_jogo_int} gol(s); base {art_base_novo.get(jogador)}")
 
