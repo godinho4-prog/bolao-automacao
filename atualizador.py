@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import re
+import html
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import firebase_admin
@@ -61,6 +62,93 @@ ARTILHEIRO_TIME = {
     'Messi': 'Argentina'
 }
 
+def preparar_texto_json_bbc(texto):
+    """Normaliza o HTML/JSON embutido da BBC para permitir regex nos dados de eventos."""
+    texto = html.unescape(texto or '')
+
+    # Em algumas partes o JSON aparece com aspas escapadas: \"playerName\"
+    texto = texto.replace('\\"', '"')
+
+    # Decodifica sequências unicode, sem tentar reinterpretar o arquivo inteiro.
+    texto = re.sub(
+        r'\\u([0-9a-fA-F]{4})',
+        lambda m: chr(int(m.group(1), 16)),
+        texto
+    )
+
+    return texto
+
+def contar_gols_validos_no_actions(actions_text):
+    """
+    Conta gols oficiais da partida dentro do array actions[] do jogador.
+    Conta Goal e Penalty. Não conta disputa de pênaltis, que aparece em outro campo.
+    """
+    if not actions_text:
+        return 0
+
+    return len(re.findall(r'"type":"(?:Goal|Penalty)"', actions_text))
+
+def extrair_gols_artilheiros_da_pagina_bbc(html_texto):
+    """
+    Lê o JSON embutido da página de placares da BBC e devolve:
+    {
+        'Brasil__Noruega': {'Haaland': 2},
+        ...
+    }
+    """
+    texto = preparar_texto_json_bbc(html_texto)
+    gols_por_jogo = {}
+
+    # Captura cada evento com blocos home/away.
+    # O trecho enviado pelo usuário tem exatamente:
+    # {"home":{...},"away":{...},"id":"..."}
+    padrao_evento = re.compile(
+        r'\{"home":\{(?P<home>.*?)\},"away":\{(?P<away>.*?)\},"id":"(?P<event_id>[^"]+)"',
+        re.S
+    )
+
+    padrao_jogador = re.compile(
+        r'"playerName":"(?P<player>[^"]+)","actionType":"goal","actions":\[(?P<actions>.*?)\]',
+        re.S
+    )
+
+    for evento in padrao_evento.finditer(texto):
+        home_block = evento.group('home')
+        away_block = evento.group('away')
+
+        home_name_match = re.search(r'"fullName":"([^"]+)"', home_block)
+        away_name_match = re.search(r'"fullName":"([^"]+)"', away_block)
+
+        if not home_name_match or not away_name_match:
+            continue
+
+        home_br = traduzir_selecao(home_name_match.group(1))
+        away_br = traduzir_selecao(away_name_match.group(1))
+        chave = f"{home_br}__{away_br}"
+
+        gols_do_jogo = {}
+
+        for bloco_time in [home_block, away_block]:
+            for m in padrao_jogador.finditer(bloco_time):
+                jogador_bbc = m.group('player')
+                jogador_br = traduzir_jogador(jogador_bbc)
+
+                if jogador_br not in ALVOS_BOLAO:
+                    continue
+
+                qtd_gols = contar_gols_validos_no_actions(m.group('actions'))
+
+                if qtd_gols > 0:
+                    gols_do_jogo[jogador_br] = max(
+                        int(gols_do_jogo.get(jogador_br, 0) or 0),
+                        int(qtd_gols)
+                    )
+
+        if gols_do_jogo:
+            gols_por_jogo[chave] = gols_do_jogo
+
+    return gols_por_jogo
+
 def get_progress_value(status_str):
     s = str(status_str).upper()
     if 'FT' in s or 'FULL' in s: return 999
@@ -119,6 +207,11 @@ for data in datas_alvo:
         continue
 
     paginas_ok += 1
+
+    gols_artilheiros_por_jogo_bbc = extrair_gols_artilheiros_da_pagina_bbc(resposta.text)
+    if gols_artilheiros_por_jogo_bbc:
+        print(f"⚽ Gols de artilheiros encontrados no JSON da BBC: {gols_artilheiros_por_jogo_bbc}")
+
     soup = BeautifulSoup(resposta.text, 'html.parser')
     jogos = soup.find_all('li', class_='ssrcss-18nzily-HeadToHeadWrapper')
     blocos_de_jogo_encontrados += len(jogos)
@@ -199,6 +292,12 @@ for data in datas_alvo:
                         pen_finished = True
                         print(f"🎯 Pênaltis finalizados capturados na agulha! Casa: {pen_home} x Fora: {pen_away}")
 
+                chave_gols_jogo = f"{time_casa_br}__{time_fora_br}"
+                gols_artilheiros_jogo = gols_artilheiros_por_jogo_bbc.get(chave_gols_jogo, {})
+
+                if gols_artilheiros_jogo:
+                    print(f"⚽ Artilheiros no jogo {time_casa_br} x {time_fora_br}: {gols_artilheiros_jogo}")
+
                 print(f"Jogo: {time_casa_br} {placar_casa} x {placar_fora} {time_fora_br} | Status: {status_texto}")
                 
                 resultados_capturados.append({
@@ -210,7 +309,8 @@ for data in datas_alvo:
                     'pen_away': pen_away,
                     'pen_finished': pen_finished,
                     'is_extra_time': is_extra_time,
-                    'status': status_texto
+                    'status': status_texto,
+                    'gols_artilheiros_jogo': gols_artilheiros_jogo
                 })
         except Exception as e:
             try:
@@ -405,10 +505,13 @@ if resultados_capturados:
             }
 
             # INJEÇÃO DOS GOLS DE ARTILHEIRO NO JOGO AO VIVO
+            # Fonte principal: JSON da própria página de placares da BBC.
             # Ex.: art_live: {'Haaland': 2}, art_base: {'Haaland': 3}
-            # art_live guarda apenas os gols feitos neste jogo.
-            # art_base guarda quantos gols o jogador tinha antes deste jogo.
-            if gols_delta_artilheiro or jogo_no_banco.get('art_live'):
+            gols_diretos_jogo = cap.get('gols_artilheiros_jogo', {})
+            if not isinstance(gols_diretos_jogo, dict):
+                gols_diretos_jogo = {}
+
+            if gols_diretos_jogo or gols_delta_artilheiro or jogo_no_banco.get('art_live'):
                 art_live_atual = jogo_no_banco.get('art_live', {})
                 if not isinstance(art_live_atual, dict):
                     art_live_atual = {}
@@ -420,7 +523,35 @@ if resultados_capturados:
                 art_live_novo = dict(art_live_atual)
                 art_base_novo = dict(art_base_atual)
 
+                # 1) Caminho novo e preferencial: autores dos gols vindos da página de placares.
+                # Aqui NÃO somamos delta: gravamos o estado atual do jogo.
+                for jogador, gols_no_jogo in gols_diretos_jogo.items():
+                    time_do_jogador = ARTILHEIRO_TIME.get(jogador)
+
+                    if time_do_jogador and (time_do_jogador == jogo_encontrado['home'] or time_do_jogador == jogo_encontrado['away']):
+                        try:
+                            gols_no_jogo_int = int(gols_no_jogo or 0)
+                        except Exception:
+                            gols_no_jogo_int = 0
+
+                        if gols_no_jogo_int > 0:
+                            art_live_novo[jogador] = gols_no_jogo_int
+
+                            if jogador not in art_base_novo:
+                                dados_atuais = scorers_atuais.get(jogador, {})
+                                try:
+                                    art_base_novo[jogador] = int(dados_atuais.get('goals', 0) or 0)
+                                except Exception:
+                                    art_base_novo[jogador] = 0
+
+                            print(f"⚽ art_live direto BBC no jogo {game_id_str}: {jogador} {gols_no_jogo_int} gol(s); base {art_base_novo.get(jogador)}")
+
+                # 2) Fallback antigo: se a página de artilheiros acumulados atualizar antes,
+                # ainda aproveitamos o delta, mas apenas para jogadores que não vieram no JSON do jogo.
                 for jogador, delta_gols in gols_delta_artilheiro.items():
+                    if jogador in gols_diretos_jogo:
+                        continue
+
                     time_do_jogador = ARTILHEIRO_TIME.get(jogador)
 
                     if time_do_jogador and (time_do_jogador == jogo_encontrado['home'] or time_do_jogador == jogo_encontrado['away']):
@@ -437,10 +568,9 @@ if resultados_capturados:
                             except Exception:
                                 art_base_novo[jogador] = 0
 
-                        print(f"⚽ art_live atualizado no jogo {game_id_str}: {jogador} +{delta_gols}; base {art_base_novo.get(jogador)}")
+                        print(f"⚽ art_live fallback por delta no jogo {game_id_str}: {jogador} +{delta_gols}; base {art_base_novo.get(jogador)}")
 
-                # Correção retroativa: se já existia art_live sem art_base, tenta reconstruir a base
-                # usando o total atual do Firebase menos os gols deste jogo.
+                # Correção retroativa: se já existia art_live sem art_base, tenta reconstruir.
                 for jogador, gols_no_jogo in list(art_live_novo.items()):
                     if jogador not in art_base_novo:
                         dados_atuais = scorers_atuais.get(jogador, {})
