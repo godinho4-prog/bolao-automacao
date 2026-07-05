@@ -159,6 +159,17 @@ def get_progress_value(status_str):
     if nums: return int(nums[0])
     return 0
 
+def minutos_desde_iso_utc(valor_iso):
+    if not valor_iso:
+        return None
+
+    try:
+        dt = datetime.fromisoformat(str(valor_iso).replace('Z', '+00:00'))
+        dt = dt.replace(tzinfo=None)
+        return (datetime.utcnow() - dt).total_seconds() / 60
+    except Exception:
+        return None
+
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 REQUEST_TIMEOUT = 15
 
@@ -511,19 +522,24 @@ if resultados_capturados:
             if not isinstance(gols_diretos_jogo, dict):
                 gols_diretos_jogo = {}
 
-            # Evita criar art_live retroativo para jogos antigos que só estão sendo raspados
+            # Evita criar ou reprocessar art_live em jogos antigos que só estão sendo raspados
             # porque o robô consulta ontem/hoje/amanhã por segurança de fuso.
-            # Se o jogo já tinha finished_at no banco, ele já passou da janela útil do ao vivo.
-            # Nesse caso, só mantemos art_live se ele já existia antes.
+            # Mantemos a artilharia ao vivo apenas durante a janela útil pós-jogo.
             jogo_finalizado_agora = any(x in status_novo for x in ['FT', 'FULL', 'AET', 'PEN', 'PENS', 'SHOOTOUT'])
-            jogo_ja_estava_finalizado_no_banco = 'finished_at' in jogo_no_banco
+            idade_finished_min = minutos_desde_iso_utc(jogo_no_banco.get('finished_at'))
 
-            if jogo_finalizado_agora and jogo_ja_estava_finalizado_no_banco and not jogo_no_banco.get('art_live'):
+            jogo_fora_da_janela_artilheiro = (
+                jogo_finalizado_agora
+                and idade_finished_min is not None
+                and idade_finished_min > 20
+            )
+
+            if jogo_fora_da_janela_artilheiro:
                 if gols_diretos_jogo:
-                    print(f"ℹ️ Ignorando artilheiro retroativo em jogo já finalizado no banco: {game_id_str} {cap['home']} x {cap['away']} -> {gols_diretos_jogo}")
+                    print(f"ℹ️ Ignorando artilheiro de jogo fora da janela ao vivo: {game_id_str} {cap['home']} x {cap['away']} -> {gols_diretos_jogo}")
                 gols_diretos_jogo = {}
 
-            if gols_diretos_jogo or gols_delta_artilheiro or jogo_no_banco.get('art_live'):
+            if (not jogo_fora_da_janela_artilheiro) and (gols_diretos_jogo or gols_delta_artilheiro or jogo_no_banco.get('art_live')):
                 art_live_atual = jogo_no_banco.get('art_live', {})
                 if not isinstance(art_live_atual, dict):
                     art_live_atual = {}
