@@ -278,6 +278,7 @@ if not isinstance(scorers_atuais, dict):
     scorers_atuais = {}
 
 gols_delta_artilheiro = {}
+gols_base_artilheiro = {}
 
 for jogador, gols_novos in novos_artilheiros.items():
     dados_antigos = scorers_atuais.get(jogador)
@@ -290,7 +291,8 @@ for jogador, gols_novos in novos_artilheiros.items():
             delta = int(gols_novos) - gols_antigos
             if delta > 0:
                 gols_delta_artilheiro[jogador] = delta
-                print(f"⚽ Delta de artilheiro detectado: {jogador} +{delta} gol(s)")
+                gols_base_artilheiro[jogador] = gols_antigos
+                print(f"⚽ Delta de artilheiro detectado: {jogador} +{delta} gol(s). Base anterior: {gols_antigos}")
         except Exception as e:
             print(f"⚠️ Não foi possível calcular delta de artilheiro para {jogador}: {e}")
 
@@ -403,14 +405,20 @@ if resultados_capturados:
             }
 
             # INJEÇÃO DOS GOLS DE ARTILHEIRO NO JOGO AO VIVO
-            # Ex.: art_live: {'Mbappé': 1}
-            # Isso guarda apenas o delta daquele jogo, não o total acumulado da artilharia.
-            if gols_delta_artilheiro:
+            # Ex.: art_live: {'Haaland': 2}, art_base: {'Haaland': 3}
+            # art_live guarda apenas os gols feitos neste jogo.
+            # art_base guarda quantos gols o jogador tinha antes deste jogo.
+            if gols_delta_artilheiro or jogo_no_banco.get('art_live'):
                 art_live_atual = jogo_no_banco.get('art_live', {})
                 if not isinstance(art_live_atual, dict):
                     art_live_atual = {}
 
+                art_base_atual = jogo_no_banco.get('art_base', {})
+                if not isinstance(art_base_atual, dict):
+                    art_base_atual = {}
+
                 art_live_novo = dict(art_live_atual)
+                art_base_novo = dict(art_base_atual)
 
                 for jogador, delta_gols in gols_delta_artilheiro.items():
                     time_do_jogador = ARTILHEIRO_TIME.get(jogador)
@@ -422,10 +430,30 @@ if resultados_capturados:
                             gols_ja_registrados = 0
 
                         art_live_novo[jogador] = gols_ja_registrados + int(delta_gols)
-                        print(f"⚽ art_live atualizado no jogo {game_id_str}: {jogador} +{delta_gols}")
+
+                        if jogador not in art_base_novo:
+                            try:
+                                art_base_novo[jogador] = int(gols_base_artilheiro.get(jogador, 0) or 0)
+                            except Exception:
+                                art_base_novo[jogador] = 0
+
+                        print(f"⚽ art_live atualizado no jogo {game_id_str}: {jogador} +{delta_gols}; base {art_base_novo.get(jogador)}")
+
+                # Correção retroativa: se já existia art_live sem art_base, tenta reconstruir a base
+                # usando o total atual do Firebase menos os gols deste jogo.
+                for jogador, gols_no_jogo in list(art_live_novo.items()):
+                    if jogador not in art_base_novo:
+                        dados_atuais = scorers_atuais.get(jogador, {})
+                        try:
+                            total_atual = int(dados_atuais.get('goals', 0) or 0)
+                            art_base_novo[jogador] = max(0, total_atual - int(gols_no_jogo or 0))
+                            print(f"🧩 art_base reconstruído no jogo {game_id_str}: {jogador} base {art_base_novo[jogador]}")
+                        except Exception as e:
+                            print(f"⚠️ Não foi possível reconstruir art_base para {jogador}: {e}")
 
                 if art_live_novo:
                     payload['art_live'] = art_live_novo
+                    payload['art_base'] = art_base_novo
 
             # INJEÇÃO DOS PÊNALTIS NO BANCO
 
