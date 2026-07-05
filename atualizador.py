@@ -53,6 +53,14 @@ def traduzir_selecao(nome_ingles):
 def traduzir_jogador(nome_ingles):
     return DICIONARIO_ARTILHEIROS.get(nome_ingles.strip(), nome_ingles.strip())
 
+ARTILHEIRO_TIME = {
+    'Mbappé': 'Franca',
+    'Kane': 'Inglaterra',
+    'Haaland': 'Noruega',
+    'Cristiano Ronaldo': 'Portugal',
+    'Messi': 'Argentina'
+}
+
 def get_progress_value(status_str):
     s = str(status_str).upper()
     if 'FT' in s or 'FULL' in s: return 999
@@ -261,6 +269,31 @@ ko_ref = db.collection('config').document('ko_games')
 doc_ko = ko_ref.get()
 banco_ko = doc_ko.to_dict() if doc_ko.exists else {}
 
+# Lê admin_data antes de gravar, para detectar se algum artilheiro aumentou gols.
+admin_ref = db.collection('config').document('admin_data')
+doc_admin = admin_ref.get()
+banco_admin = doc_admin.to_dict() if doc_admin.exists else {}
+scorers_atuais = banco_admin.get('scorers', {})
+if not isinstance(scorers_atuais, dict):
+    scorers_atuais = {}
+
+gols_delta_artilheiro = {}
+
+for jogador, gols_novos in novos_artilheiros.items():
+    dados_antigos = scorers_atuais.get(jogador)
+
+    # Se o jogador ainda não existia no banco, não atribuímos todos os gols anteriores
+    # ao jogo atual. Só calculamos delta quando já havia referência anterior.
+    if isinstance(dados_antigos, dict) and 'goals' in dados_antigos:
+        try:
+            gols_antigos = int(dados_antigos.get('goals', 0) or 0)
+            delta = int(gols_novos) - gols_antigos
+            if delta > 0:
+                gols_delta_artilheiro[jogador] = delta
+                print(f"⚽ Delta de artilheiro detectado: {jogador} +{delta} gol(s)")
+        except Exception as e:
+            print(f"⚠️ Não foi possível calcular delta de artilheiro para {jogador}: {e}")
+
 if resultados_capturados:
     GAMES_LIST = [
         {"id": 1, "home": "Mexico", "away": "Africa do Sul"}, {"id": 2, "home": "Coreia do Sul", "away": "Rep Tcheca"},
@@ -369,6 +402,31 @@ if resultados_capturados:
                 'status': status_novo
             }
 
+            # INJEÇÃO DOS GOLS DE ARTILHEIRO NO JOGO AO VIVO
+            # Ex.: art_live: {'Mbappé': 1}
+            # Isso guarda apenas o delta daquele jogo, não o total acumulado da artilharia.
+            if gols_delta_artilheiro:
+                art_live_atual = jogo_no_banco.get('art_live', {})
+                if not isinstance(art_live_atual, dict):
+                    art_live_atual = {}
+
+                art_live_novo = dict(art_live_atual)
+
+                for jogador, delta_gols in gols_delta_artilheiro.items():
+                    time_do_jogador = ARTILHEIRO_TIME.get(jogador)
+
+                    if time_do_jogador and (time_do_jogador == jogo_encontrado['home'] or time_do_jogador == jogo_encontrado['away']):
+                        try:
+                            gols_ja_registrados = int(art_live_novo.get(jogador, 0) or 0)
+                        except Exception:
+                            gols_ja_registrados = 0
+
+                        art_live_novo[jogador] = gols_ja_registrados + int(delta_gols)
+                        print(f"⚽ art_live atualizado no jogo {game_id_str}: {jogador} +{delta_gols}")
+
+                if art_live_novo:
+                    payload['art_live'] = art_live_novo
+
             # INJEÇÃO DOS PÊNALTIS NO BANCO
 
             
@@ -401,11 +459,6 @@ if resultados_capturados:
         print("ℹ️ Nenhum placar capturado bateu com a lista de jogos do bolão. Pode ser normal em dia sem jogo relevante; se havia jogo, confira nomes/traduções/confrontos.")
 
 if novos_artilheiros:
-    admin_ref = db.collection('config').document('admin_data')
-    doc_admin = admin_ref.get()
-    banco_admin = doc_admin.to_dict() if doc_admin.exists else {}
-    scorers_atuais = banco_admin.get('scorers', {})
-    
     for jogador, gols in novos_artilheiros.items():
         if jogador not in scorers_atuais:
             scorers_atuais[jogador] = {'goals': gols, 'isTop': False}
