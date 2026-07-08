@@ -151,6 +151,20 @@ def extrair_gols_artilheiros_da_pagina_bbc(html_texto):
 
 def get_progress_value(status_str):
     s = str(status_str).upper()
+
+    # Ordem correta do mata-mata:
+    # tempo normal -> prorrogação -> pênaltis -> fim.
+    # Antes, PEN ficava abaixo de AET e podia ser ignorado como "CDN desatualizado".
+    if 'WIN' in s and 'ON PENS' in s: return 1001
+    if 'FT' in s or 'FULL' in s: return 1000
+    if 'PEN' in s or 'PENS' in s or 'SHOOTOUT' in s: return 999
+    if 'AET' in s or 'EXTRA' in s: return 998
+    if 'HT' in s or 'HALF' in s: return 45
+
+    nums = re.findall(r'(\d+)', s)
+    if nums: return int(nums[0])
+    return 0
+    s = str(status_str).upper()
     if 'FT' in s or 'FULL' in s: return 999
     if 'AET' in s: return 998
     if 'PEN' in s: return 997
@@ -256,7 +270,8 @@ for data in datas_alvo:
                 
                 # Busca status em múltiplas classes da BBC para não perder jogos finalizados em 0x0
                 status_tag = jogo.find(class_=re.compile(r'(MatchProgressWrapper|MatchStatus|StatusWrapper)', re.I))
-                status_texto = status_tag.text.strip().upper() if status_tag else ""
+                status_texto_original = status_tag.text.strip() if status_tag else ""
+                status_texto = status_texto_original.upper()
                 
                 is_extra_time = False
                 
@@ -269,39 +284,91 @@ for data in datas_alvo:
                             is_extra_time = True
                             break
                             
-                # --- NOVA LÓGICA: CAÇADOR DE PÊNALTIS CIRÚRGICO (VIA DATA-TESTID) ---
+                # --- LÓGICA DE PÊNALTIS ---
+                # A BBC pode mostrar o fim assim:
+                # "Switzerland win 4-3 on pens"
+                # Nesse caso, 4-3 está na ordem vencedor-perdedor, não casa-fora.
                 pen_home = ""
                 pen_away = ""
                 pen_finished = False
                 
                 pen_div = jogo.find('div', attrs={"data-testid": "penalties-text"})
-                if pen_div:
-                    texto_pen = pen_div.text.strip()
-                    match_pens = re.search(r'(\d+)\s*-\s*(\d+)', texto_pen)
-                    
-                    if match_pens:
-                        v1 = int(match_pens.group(1))
-                        v2 = int(match_pens.group(2))
-                        maior = str(max(v1, v2))
-                        menor = str(min(v1, v2))
-                        
-                        span_vencedor = pen_div.find('span')
-                        if span_vencedor:
-                            vencedor_en = span_vencedor.text.strip()
-                            vencedor_br = traduzir_selecao(vencedor_en)
-                            
-                            if vencedor_br == time_casa_br:
-                                pen_home = maior
-                                pen_away = menor
-                            else:
-                                pen_home = menor
-                                pen_away = maior
+                texto_pen = pen_div.get_text(" ", strip=True) if pen_div else ""
+
+                textos_finais_para_pens = []
+                if texto_pen:
+                    textos_finais_para_pens.append(texto_pen)
+                if status_texto_original:
+                    textos_finais_para_pens.append(status_texto_original)
+
+                texto_bloco_jogo = jogo.get_text(" ", strip=True)
+                if texto_bloco_jogo:
+                    textos_finais_para_pens.append(texto_bloco_jogo)
+
+                for texto_candidato in textos_finais_para_pens:
+                    if pen_home != "" and pen_away != "":
+                        break
+
+                    match_win_pens = re.search(
+                        r'(.+?)\s+wins?\s+(\d+)\s*[-–]\s*(\d+)\s+on\s+pens?',
+                        texto_candidato,
+                        re.I
+                    )
+
+                    if match_win_pens:
+                        vencedor_en = match_win_pens.group(1).strip()
+                        vencedor_br = traduzir_selecao(vencedor_en)
+                        gols_vencedor = str(int(match_win_pens.group(2)))
+                        gols_perdedor = str(int(match_win_pens.group(3)))
+
+                        if vencedor_br == time_casa_br:
+                            pen_home = gols_vencedor
+                            pen_away = gols_perdedor
+                        elif vencedor_br == time_fora_br:
+                            pen_home = gols_perdedor
+                            pen_away = gols_vencedor
                         else:
-                            pen_home = str(v1)
-                            pen_away = str(v2)
-                            
+                            # Fallback raro: se não reconheceu o nome, mantém a ordem lida.
+                            pen_home = gols_vencedor
+                            pen_away = gols_perdedor
+
                         pen_finished = True
-                        print(f"🎯 Pênaltis finalizados capturados na agulha! Casa: {pen_home} x Fora: {pen_away}")
+                        print(f"🎯 Pênaltis finalizados pela frase BBC! Vencedor: {vencedor_br}. Casa: {pen_home} x Fora: {pen_away}")
+                        break
+
+                # Fallback para placar parcial de pênaltis.
+                # Aqui NÃO marcamos pen_finished, porque pode ser disputa ainda em andamento.
+                if pen_home == "" or pen_away == "":
+                    textos_parciais_para_pens = []
+                    if texto_pen:
+                        textos_parciais_para_pens.append(texto_pen)
+                    if status_texto_original:
+                        textos_parciais_para_pens.append(status_texto_original)
+
+                    for texto_candidato in textos_parciais_para_pens:
+                        if pen_home != "" and pen_away != "":
+                            break
+
+                        match_status_pen = (
+                            re.search(r'PENALT(?:IES|Y|IS)?[^0-9]*(\d+)\s*[-–]\s*(\d+)', texto_candidato, re.I) or
+                            re.search(r'PENS?[^0-9]*(\d+)\s*[-–]\s*(\d+)', texto_candidato, re.I) or
+                            re.search(r'SHOOTOUT[^0-9]*(\d+)\s*[-–]\s*(\d+)', texto_candidato, re.I)
+                        )
+
+                        if match_status_pen:
+                            pen_home = match_status_pen.group(1)
+                            pen_away = match_status_pen.group(2)
+                            print(f"🎯 Pênaltis parciais capturados! Casa: {pen_home} x Fora: {pen_away}")
+                            break
+
+                    # Último fallback: se o bloco específico de pênaltis só tiver "3-2",
+                    # presumimos ordem casa-fora, mas ainda sem marcar fim.
+                    if (pen_home == "" or pen_away == "") and texto_pen:
+                        match_pens_solto = re.search(r'(\d+)\s*[-–]\s*(\d+)', texto_pen)
+                        if match_pens_solto:
+                            pen_home = match_pens_solto.group(1)
+                            pen_away = match_pens_solto.group(2)
+                            print(f"🎯 Pênaltis capturados no bloco específico! Casa: {pen_home} x Fora: {pen_away}")
 
                 chave_gols_jogo = f"{time_casa_br}__{time_fora_br}"
                 gols_artilheiros_jogo = gols_artilheiros_por_jogo_bbc.get(chave_gols_jogo, {})
@@ -631,13 +698,19 @@ if resultados_capturados:
                 payload['home'] = placar_home
                 payload['away'] = placar_away
 
-                # O raspador detectou AET ou +90 min
-                if cap['is_extra_time']:
+                # O raspador detectou prorrogação/pênaltis/fim por pênaltis.
+                if cap['is_extra_time'] or cap.get('pen_finished'):
                     payload['locked_90'] = True
                     print(f"🔒 GUILHOTINA DESCIDA: Pontos do bolão trancados em {placar_home}x{placar_away}.")
             
-            # LÓGICA DOS 15 MINUTOS: Carimba a hora exata da morte da partida
-            if any(x in status_novo for x in ['FT', 'FULL', 'AET', 'PEN', 'PENS', 'SHOOTOUT']):
+            # LÓGICA DOS 15 MINUTOS: Carimba a hora exata da morte da partida.
+            # Importante: PEN/PENS/SHOOTOUT sozinho NÃO significa fim; pode ser disputa em andamento.
+            jogo_finalizado_absoluto = (
+                any(x in status_novo for x in ['FT', 'FULL', 'AET']) or
+                cap.get('pen_finished') is True
+            )
+
+            if jogo_finalizado_absoluto:
                 if 'finished_at' in jogo_no_banco:
                     payload['finished_at'] = jogo_no_banco['finished_at']
                 else:
