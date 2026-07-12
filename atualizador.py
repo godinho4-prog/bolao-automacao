@@ -39,14 +39,50 @@ DICIONARIO_SELECOES = {
 }
 
 DICIONARIO_ARTILHEIROS = {
-    'E. Haaland': 'Haaland', 'Erling Haaland': 'Haaland', 'Haaland': 'Haaland',
-    'K. Mbappe': 'Mbappé', 'K. Mbappé': 'Mbappé', 'Kylian Mbappe': 'Mbappé', 'Kylian Mbappé': 'Mbappé',
-    'H. Kane': 'Kane', 'Harry Kane': 'Kane', 'Kane': 'Kane',
-    'C. Ronaldo': 'Cristiano Ronaldo', 'Cristiano Ronaldo': 'Cristiano Ronaldo', 'Ronaldo': 'Cristiano Ronaldo',
-    'L. Messi': 'Messi', 'Lionel Messi': 'Messi', 'Messi': 'Messi'
+    'E. Haaland': 'Haaland',
+    'Erling Haaland': 'Haaland',
+    'Haaland': 'Haaland',
+
+    'K. Mbappe': 'Mbappé',
+    'K. Mbappé': 'Mbappé',
+    'Kylian Mbappe': 'Mbappé',
+    'Kylian Mbappé': 'Mbappé',
+    'Mbappe': 'Mbappé',
+    'Mbappé': 'Mbappé',
+
+    'H. Kane': 'Kane',
+    'Harry Kane': 'Kane',
+    'Kane': 'Kane',
+
+    'C. Ronaldo': 'Cristiano Ronaldo',
+    'Cristiano Ronaldo': 'Cristiano Ronaldo',
+    'Ronaldo': 'Cristiano Ronaldo',
+
+    'L. Messi': 'Messi',
+    'Lionel Messi': 'Messi',
+    'Messi': 'Messi',
+
+    'J. Bellingham': 'Bellingham',
+    'Jude Bellingham': 'Bellingham',
+    'Bellingham': 'Bellingham',
+
+    'O. Dembele': 'Dembélé',
+    'O. Dembélé': 'Dembélé',
+    'Ousmane Dembele': 'Dembélé',
+    'Ousmane Dembélé': 'Dembélé',
+    'Dembele': 'Dembélé',
+    'Dembélé': 'Dembélé'
 }
 
-ALVOS_BOLAO = ['Haaland', 'Mbappé', 'Kane', 'Cristiano Ronaldo', 'Messi']
+ALVOS_BOLAO = [
+    'Haaland',
+    'Mbappé',
+    'Kane',
+    'Cristiano Ronaldo',
+    'Messi',
+    'Bellingham',
+    'Dembélé'
+]
 
 def traduzir_selecao(nome_ingles):
     return DICIONARIO_SELECOES.get(nome_ingles.strip(), nome_ingles.strip())
@@ -56,7 +92,9 @@ def traduzir_jogador(nome_ingles):
 
 ARTILHEIRO_TIME = {
     'Mbappé': 'Franca',
+    'Dembélé': 'Franca',
     'Kane': 'Inglaterra',
+    'Bellingham': 'Inglaterra',
     'Haaland': 'Noruega',
     'Cristiano Ronaldo': 'Portugal',
     'Messi': 'Argentina'
